@@ -1,75 +1,68 @@
-# React + TypeScript + Vite
+# SNP Browser
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A high-performance web application for browsing and analyzing Single Nucleotide Polymorphism (SNP) data. Built with modern web technologies to handle large genomic datasets efficiently in the browser.
 
-Currently, two official plugins are available:
+Full privacy preserving - no data is sent to any server; all processing is done on your machine.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+**Live at: [snpbrowser.com](https://snpbrowser.com)**
 
-## React Compiler
+## Data
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+The original data is originally based on a scrape from [https://github.com/jaykobdetar/SNPedia-Scraper](https://github.com/jaykobdetar/SNPedia-Scraper). The database schema was slightly modified to make querying it easier.
 
-Note: This will impact Vite dev & build performances.
+The SNP database is hosted at https://static.snpbrowser.com/snp-2025113.db
 
-## Expanding the ESLint configuration
+## Features
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+- **Client-side SQLite**: Process genomic data entirely in the browser using sql.js
+- **Virtualized Rendering**: Efficiently display large datasets with react-virtuoso
+- **Web Worker Processing**: Offload heavy computations using Comlink for a smooth UI experience
+- **Modern React**: Built with React 19 and the React Compiler for optimal performance
 
-```js
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
+## Tech Stack
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
+- **React 19** with React Compiler for automatic optimizations
+- **TypeScript** for type safety
+- **Vite** (via Rolldown) for fast builds and HMR
+- **TanStack Query** for data fetching and caching
+- **Tailwind CSS** for styling
+- **sql.js** for in-browser SQLite databases
+- **Comlink** for web worker communication
+- **React Virtuoso** for virtualized list rendering
 
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
+## Development
+
+### Prerequisites
+
+- Node.js 18+ (or Bun)
+- npm, yarn, or bun
+
+### Getting Started
+
+```bash
+bun install
+
+bun dev
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Project Structure
 
-```js
-// eslint.config.js
-import reactX from "eslint-plugin-react-x";
-import reactDom from "eslint-plugin-react-dom";
-
-export default defineConfig([
-  globalIgnores(["dist"]),
-  {
-    files: ["**/*.{ts,tsx}"],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs["recommended-typescript"],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ["./tsconfig.node.json", "./tsconfig.app.json"],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-]);
 ```
+snp-browser/
+├── src/              # Application source code
+├── public/           # Static assets
+├── dist/             # Production build output
+└── vite.config.ts    # Vite configuration
+```
+
+## Building for Production
+
+```bash
+npm run build
+```
+
+The build process includes:
+
+1. TypeScript type checking (`tsc -b`)
+2. Vite production build with Rolldown
+3. Output to `dist/` directory

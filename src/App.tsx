@@ -4,6 +4,7 @@ import { FileUpload } from "./components/FileUpload";
 import { ResultsDisplay } from "./components/ResultsDisplay";
 import { parse23andMeFile, validate23andMeFile } from "./utils/fileParser";
 import type { ParseResult, MatchedSNP } from "./types/snp";
+import { DB_URL } from "./constants.ts";
 
 function App() {
   const [dbProgress, setDbProgress] = useState(0);
@@ -35,7 +36,7 @@ function App() {
 
         // Load database in worker thread
         await workerApi.loadDatabase(
-          "https://static.snpbrowser.com/snp-2025113.db",
+          DB_URL,
           proxy((progress: number) => {
             setDbProgress(progress);
           }),
