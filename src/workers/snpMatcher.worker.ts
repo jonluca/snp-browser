@@ -8,6 +8,21 @@ import type { UserGenotype, MatchedSNP, SNPRecord } from "../types/snp";
 let db: Database | null = null;
 
 /**
+ * All columns to select from the snps table
+ */
+const SNP_COLUMNS = `
+  rsid, content, chromosome, position, gene, gene_s,
+  orientation, assembly, genome_build, dbsnp_build, stabilized_orientation,
+  geno1, geno2, geno3,
+  clin_chromosome, clin_rsid, clin_sig, clin_disease, clin_dbn, clin_hgvs,
+  clin_origin, clin_accession, clin_reversed, clin_fwd_ref, clin_fwd_alt,
+  clin_ref, clin_alt, clin_rspos, clin_dbsnp_build_id, clin_ssr, clin_sao,
+  clin_vp, clin_geneinfo, clin_gene_name, clin_gene_id, clin_wgt, clin_vc,
+  clin_clnalle, clin_tags, clin_clndsdb, clin_clndsdbid, clin_clnrevstat,
+  clin_clnsrc, clin_clnsrcid, pmid, pmid_title
+`;
+
+/**
  * Matches SNPs in batches to avoid SQLite parameter limits
  */
 async function matchSNPsInBatches(
@@ -24,7 +39,7 @@ async function matchSNPsInBatches(
 
     // Create parameterized query
     const placeholders = rsids.map(() => "?").join(",");
-    const query = `SELECT rsid, content, scraped_at, attribution FROM snps WHERE rsid IN (${placeholders})`;
+    const query = `SELECT ${SNP_COLUMNS} FROM snps WHERE rsid IN (${placeholders})`;
 
     try {
       const stmt = database.prepare(query);
@@ -156,6 +171,90 @@ const workerApi = {
     }
 
     return matchSNPsInBatches(db, genotypes, onProgress);
+  },
+
+  /**
+   * Search/browse SNPs with filtering
+   */
+  async searchSNPs(filters: {
+    searchTerm?: string;
+    chromosome?: string;
+    gene?: string;
+    clinicalSignificance?: string;
+    disease?: string;
+    limit?: number;
+    offset?: number;
+  }): Promise<{ results: SNPRecord[]; total: number }> {
+    if (!db) {
+      throw new Error("Database not loaded. Call loadDatabase first.");
+    }
+
+    const conditions: string[] = [];
+    const params: (string | number)[] = [];
+
+    // General search term (searches rsid, gene, content, disease)
+    if (filters.searchTerm && filters.searchTerm.trim()) {
+      const term = `%${filters.searchTerm.trim()}%`;
+      conditions.push(
+        "(rsid LIKE ? OR gene LIKE ? OR gene_s LIKE ? OR content LIKE ? OR clin_disease LIKE ? OR clin_gene_name LIKE ?)",
+      );
+      params.push(term, term, term, term, term, term);
+    }
+
+    // Chromosome filter
+    if (filters.chromosome) {
+      conditions.push("chromosome = ?");
+      params.push(filters.chromosome);
+    }
+
+    // Gene filter
+    if (filters.gene && filters.gene.trim()) {
+      const geneTerm = `%${filters.gene.trim()}%`;
+      conditions.push("(gene LIKE ? OR gene_s LIKE ? OR clin_gene_name LIKE ?)");
+      params.push(geneTerm, geneTerm, geneTerm);
+    }
+
+    // Clinical significance filter
+    if (filters.clinicalSignificance) {
+      conditions.push("clin_sig LIKE ?");
+      params.push(`%${filters.clinicalSignificance}%`);
+    }
+
+    // Disease filter
+    if (filters.disease && filters.disease.trim()) {
+      conditions.push("clin_disease LIKE ?");
+      params.push(`%${filters.disease.trim()}%`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+
+    // Get total count
+    const countQuery = `SELECT COUNT(*) as count FROM snps ${whereClause}`;
+    const countStmt = db.prepare(countQuery);
+    if (params.length > 0) {
+      countStmt.bind(params);
+    }
+    countStmt.step();
+    const total = (countStmt.getAsObject().count as number) || 0;
+    countStmt.free();
+
+    // Get results with pagination
+    const limit = filters.limit || 50;
+    const offset = filters.offset || 0;
+    const query = `SELECT ${SNP_COLUMNS} FROM snps ${whereClause} LIMIT ? OFFSET ?`;
+
+    const results: SNPRecord[] = [];
+    const stmt = db.prepare(query);
+    stmt.bind([...params, limit, offset]);
+
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as unknown as SNPRecord;
+      results.push(row);
+    }
+
+    stmt.free();
+
+    return { results, total };
   },
 };
 

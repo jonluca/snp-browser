@@ -2,11 +2,15 @@ import { useState, useCallback, useEffect } from "react";
 import { useSNPMatcherWorker, proxy } from "./hooks/useSNPMatcherWorker";
 import { FileUpload } from "./components/FileUpload";
 import { ResultsDisplay } from "./components/ResultsDisplay";
+import { SNPBrowser } from "./components/SNPBrowser";
 import { parse23andMeFile, validate23andMeFile } from "./utils/fileParser";
 import type { ParseResult, MatchedSNP } from "./types/snp";
 import { DB_URL } from "./constants.ts";
 
+type AppMode = "upload" | "browse";
+
 function App() {
+  const [mode, setMode] = useState<AppMode>("browse");
   const [dbProgress, setDbProgress] = useState(0);
   const [isDbLoading, setIsDbLoading] = useState(true);
   const [dbError, setDbError] = useState<Error | null>(null);
@@ -108,6 +112,7 @@ function App() {
     setMatchProgress({ current: 0, total: 0 });
     setMatches(null);
     setMatchError(null);
+    setMode("browse");
   }, []);
 
   // Determine app state
@@ -119,9 +124,33 @@ function App() {
       <div className="mx-auto max-w-7xl">
         <header className="mb-8 text-center">
           <h1 className="mb-2 text-4xl font-bold text-gray-900">🧬 SNP Browser</h1>
-          <p className="text-base text-gray-600">Upload your 23andMe data to explore your genetic variants</p>
+          <p className="text-base text-gray-600">
+            Explore genetic variants from SNPedia and match with your 23andMe data
+          </p>
           {dbStats && !isDbLoading && (
             <p className="mt-1 text-sm text-gray-500">Database contains {dbStats.totalSNPs.toLocaleString()} SNPs</p>
+          )}
+
+          {/* Mode toggle */}
+          {!isDbLoading && !hasError && !hasResults && (
+            <div className="mt-4 inline-flex rounded-lg border border-gray-300 bg-white p-1 shadow-sm">
+              <button
+                onClick={() => setMode("browse")}
+                className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                  mode === "browse" ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                Browse Database
+              </button>
+              <button
+                onClick={() => setMode("upload")}
+                className={`rounded-md px-4 py-2 text-sm font-medium transition-colors ${
+                  mode === "upload" ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"
+                }`}
+              >
+                Upload Your Data
+              </button>
+            </div>
           )}
         </header>
 
@@ -155,8 +184,13 @@ function App() {
           </div>
         )}
 
-        {/* Ready to upload */}
-        {!isDbLoading && !hasError && !hasResults && <FileUpload onFileSelect={handleFileSelect} />}
+        {/* Main content area */}
+        {!isDbLoading && !hasError && !hasResults && (
+          <>
+            {mode === "browse" && workerApi && <SNPBrowser workerApi={workerApi} />}
+            {mode === "upload" && <FileUpload onFileSelect={handleFileSelect} />}
+          </>
+        )}
 
         {/* Parsing (this state is brief, might not show) */}
         {isParsing && (
