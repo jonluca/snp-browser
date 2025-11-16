@@ -65,7 +65,8 @@ export function ResultsDisplay({ matches }: ResultsDisplayProps) {
           </div>
         </div>
         <div className="text-xs text-gray-600">
-          Your Genotype: <strong>{match.genotype}</strong> | Chr: {match.chromosome} | Pos: {match.position}
+          Your Genotype: <strong>{match.genotype.toUpperCase()}</strong> | Chr: {match.chromosome} | Pos:{" "}
+          {match.position}
         </div>
         {match.genotypeData?.content && (
           <div className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-500">
@@ -115,13 +116,20 @@ export function ResultsDisplay({ matches }: ResultsDisplayProps) {
         <div className="flex-1 overflow-y-auto rounded border border-gray-300 bg-gray-50 p-4">
           {selectedSNP ? (
             <div>
-              <h3 className="mt-0 text-2xl font-bold text-gray-900">{selectedSNP.rsid.toUpperCase()}</h3>
+              <h3
+                className="mt-0 text-2xl font-bold text-gray-900 cursor-pointer"
+                onClick={() => {
+                  window.open(`https://www.snpedia.com/index.php/${selectedSNP.rsid}`, "_blank");
+                }}
+              >
+                {selectedSNP.rsid.toUpperCase()}
+              </h3>
 
               {/* Your Genotype */}
               <div className="mb-4 rounded bg-blue-50 p-3 shadow-sm">
                 <h4 className="mb-2 text-sm font-semibold text-gray-800">Your Genotype</h4>
                 <div className="mb-1 flex items-center gap-2">
-                  <div className="text-lg font-bold text-blue-900">{selectedSNP.genotype}</div>
+                  <div className="text-lg font-bold text-blue-900">{selectedSNP.genotype.toUpperCase()}</div>
                   {selectedSNP.parsedData.magnitude !== undefined && (
                     <span className="rounded bg-purple-100 px-2 py-1 text-sm font-medium text-purple-800">
                       Magnitude: {selectedSNP.parsedData.magnitude}

@@ -1,7 +1,4 @@
-import wtf from "wtf_wikipedia";
-import wtf_plugin_html from "wtf-plugin-html";
-
-wtf.extend(wtf_plugin_html);
+import InfoboxParser from "infobox-parser";
 
 /**
  * Parses WikiMedia content and returns structured data
@@ -10,17 +7,30 @@ export function parseWikiContent(content: string) {
   if (!content) return null;
 
   try {
-    const doc = wtf(content);
+    // Remove templates from content to get the remaining text
+    const textWithoutTemplates = content.replace(/\{\{[^}]*\}\}/g, "").trim();
 
-    // Get text with links resolved
-    const text = doc.text();
+    // Parse wiki links [[Link]] or [[Link|Display]]
+    let html = textWithoutTemplates.replace(/\[\[([^\]|]+)(?:\|([^\]]+))?\]\]/g, (_match, link, display) => {
+      const displayText = display || link;
+      return `<a href="https://www.snpedia.com/index.php/${link}" target="_blank" class="cursor-pointer text-blue-600 font-medium">${displayText}</a>`;
+    });
 
-    // Convert the text, adding styling to what looks like linked terms
-    // We'll use a simple approach - preserve the text as is but format it nicely
-    const html = doc.html();
+    // Convert newlines to paragraphs
+    html = html
+      .split("\n")
+      .map((line) => {
+        const trimmed = line.trim();
+        if (trimmed) {
+          return `<p class="mb-2">${trimmed}</p>`;
+        }
+        return "";
+      })
+      .filter((line) => line)
+      .join("");
 
     return {
-      text,
+      text: textWithoutTemplates,
       html,
     };
   } catch (error) {
@@ -37,32 +47,26 @@ export function extractTemplateData(content: string, templateName: string): Reco
   if (!content) return null;
 
   try {
-    const doc = wtf(content);
-    const templates = doc.templates();
+    // Use infobox-parser to extract template data
+    const parsed = InfoboxParser(content);
 
-    if (!templates || templates.length === 0) return null;
+    if (!parsed || parsed.length === 0) return null;
 
-    // Find the template by name - templates() returns an array of Template objects
-    // We need to get the data from each template
-    for (const template of templates) {
-      const data = template.json() as Record<string, unknown>;
+    // Find the template by name (case-insensitive)
+    const template = parsed.find((t) => t.type === "template" && t.name?.toLowerCase() === templateName.toLowerCase());
 
-      // Check if this is the template we're looking for
-      if (typeof data.template === "string" && data.template.toLowerCase() === templateName.toLowerCase()) {
-        const params: Record<string, string> = {};
+    if (!template || !template.data) return null;
 
-        // Extract all parameters
-        Object.entries(data).forEach(([key, value]) => {
-          if (key !== "template" && value !== null && value !== undefined) {
-            params[key] = String(value);
-          }
-        });
+    const params: Record<string, string> = {};
 
-        return params;
+    // Extract all parameters from the template data
+    Object.entries(template.data).forEach(([key, value]) => {
+      if (value !== null && value !== undefined) {
+        params[key] = String(value);
       }
-    }
+    });
 
-    return null;
+    return params;
   } catch (error) {
     console.error("Error extracting template data:", error);
     return null;
