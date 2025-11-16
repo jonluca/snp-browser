@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { twMerge } from "tailwind-merge";
 import { Virtuoso } from "react-virtuoso";
 import type { Remote } from "comlink";
 import type { SNPRecord } from "../types/snp";
@@ -117,9 +118,10 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
     const isSelected = selectedSNP?.rsid === snp.rsid;
     return (
       <div
-        className={`cursor-pointer border-b border-gray-200 p-3 transition-colors ${
-          isSelected ? "bg-blue-50" : "bg-white hover:bg-gray-50"
-        }`}
+        className={twMerge(
+          "cursor-pointer border-b border-gray-200 p-3 transition-colors",
+          isSelected ? "bg-blue-50" : "bg-white hover:bg-gray-50",
+        )}
         onClick={() => setSelectedSNP(snp)}
       >
         <div className="mb-1">

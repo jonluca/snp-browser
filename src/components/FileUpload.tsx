@@ -1,4 +1,5 @@
 import { useState, useCallback, type DragEvent, type ChangeEvent } from "react";
+import { twMerge } from "tailwind-merge";
 
 interface FileUploadProps {
   onFileSelect: (file: File) => void;
@@ -56,11 +57,11 @@ export function FileUpload({ onFileSelect, disabled = false }: FileUploadProps) 
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className={`
-        rounded-lg border-2 border-dashed p-10 text-center transition-all duration-200
-        ${isDragging ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-gray-50"}
-        ${disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-blue-400"}
-      `}
+      className={twMerge(
+        "rounded-lg border-2 border-dashed p-10 text-center transition-all duration-200",
+        isDragging ? "border-blue-500 bg-blue-50" : "border-gray-300 bg-gray-50",
+        disabled ? "cursor-not-allowed opacity-60" : "cursor-pointer hover:border-blue-400",
+      )}
     >
       <input
         type="file"
@@ -70,7 +71,7 @@ export function FileUpload({ onFileSelect, disabled = false }: FileUploadProps) 
         disabled={disabled}
         className="hidden"
       />
-      <label htmlFor="file-input" className={`block ${disabled ? "cursor-not-allowed" : "cursor-pointer"}`}>
+      <label htmlFor="file-input" className={twMerge("block", disabled ? "cursor-not-allowed" : "cursor-pointer")}>
         <div className="mb-4 text-5xl">📁</div>
         <div className="mb-2 text-lg font-bold text-gray-800">
           {isDragging ? "Drop your file here" : "Drag & drop your 23andMe file"}

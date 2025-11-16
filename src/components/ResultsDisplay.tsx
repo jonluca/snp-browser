@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { twMerge } from "tailwind-merge";
 import { Virtuoso } from "react-virtuoso";
 import type { MatchedSNP } from "../types/snp";
 
@@ -46,9 +47,10 @@ export function ResultsDisplay({ matches }: ResultsDisplayProps) {
 
     return (
       <div
-        className={`cursor-pointer border-b border-gray-200 p-3 transition-colors ${
-          isSelected ? "bg-blue-50" : "bg-white hover:bg-gray-50"
-        }`}
+        className={twMerge(
+          "cursor-pointer border-b border-gray-200 p-3 transition-colors",
+          isSelected ? "bg-blue-50" : "bg-white hover:bg-gray-50",
+        )}
         onClick={() => setSelectedSNP(match)}
       >
         <div className="mb-1 flex items-center justify-between">

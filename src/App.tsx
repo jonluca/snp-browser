@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { twMerge } from "tailwind-merge";
 import { useSNPMatcherWorker, proxy } from "./hooks/useSNPMatcherWorker";
 import { FileUpload } from "./components/FileUpload";
 import { ResultsDisplay } from "./components/ResultsDisplay";
@@ -141,17 +142,19 @@ function App() {
             <div className="mt-4 inline-flex rounded-lg border gap-1 border-gray-300 bg-white p-1 shadow-sm">
               <button
                 onClick={() => setMode("browse")}
-                className={`rounded-md px-4 py-2 text-sm font-medium cursor-pointer transition-colors ${
-                  mode === "browse" ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"
-                }`}
+                className={twMerge(
+                  "rounded-md px-4 py-2 text-sm font-medium cursor-pointer transition-colors",
+                  mode === "browse" ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100",
+                )}
               >
                 Browse Database
               </button>
               <button
                 onClick={() => setMode("upload")}
-                className={`rounded-md px-4 py-2 text-sm font-medium transition-colors cursor-pointer ${
-                  mode === "upload" ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100"
-                }`}
+                className={twMerge(
+                  "rounded-md px-4 py-2 text-sm font-medium transition-colors cursor-pointer",
+                  mode === "upload" ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100",
+                )}
               >
                 Upload Your Data
               </button>
