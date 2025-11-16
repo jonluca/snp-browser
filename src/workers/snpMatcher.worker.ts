@@ -139,7 +139,9 @@ async function matchSNPsInBatches(
       console.error("Error querying batch:", error);
     }
 
-    onProgress(Math.min(i + batchSize, genotypes.length), genotypes.length);
+    if (i % 1000 === 0) {
+      onProgress(Math.min(i + batchSize, genotypes.length), genotypes.length);
+    }
   }
 
   return matches;

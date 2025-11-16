@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { twMerge } from "tailwind-merge";
 import { useSNPMatcherWorker, proxy } from "./hooks/useSNPMatcherWorker";
 import { FileUpload } from "./components/FileUpload";
@@ -11,18 +11,19 @@ type AppMode = "upload" | "browse";
 
 function App() {
   const [mode, setMode] = useState<AppMode>("upload");
-  const [dbProgress, setDbProgress] = useState(0);
   const [isDbLoading, setIsDbLoading] = useState(true);
   const [dbError, setDbError] = useState<Error | null>(null);
   const [dbStats, setDbStats] = useState<{ totalSNPs: number } | null>(null);
 
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
-  const [parseProgress, setParseProgress] = useState({ current: 0, total: 0 });
   const [isParsing, setIsParsing] = useState(false);
-  const [matchProgress, setMatchProgress] = useState({ current: 0, total: 0 });
   const [matches, setMatches] = useState<MatchedSNP[] | null>(null);
   const [isMatching, setIsMatching] = useState(false);
   const [matchError, setMatchError] = useState<Error | null>(null);
+
+  // Refs for direct DOM manipulation of progress bar (shared across all operations)
+  const progressBarRef = useRef<HTMLDivElement>(null);
+  const progressTextRef = useRef<HTMLParagraphElement>(null);
 
   // Initialize persistent worker
   const { api: workerApi, isReady: isWorkerReady, error: workerError } = useSNPMatcherWorker();
@@ -42,7 +43,12 @@ function App() {
         await workerApi.loadDatabase(
           DB_URL,
           proxy((progress: number) => {
-            setDbProgress(progress);
+            if (progressBarRef.current) {
+              progressBarRef.current.style.width = `${progress}%`;
+            }
+            if (progressTextRef.current) {
+              progressTextRef.current.textContent = `${Math.round(progress)}% complete`;
+            }
           }),
         );
 
@@ -72,12 +78,17 @@ function App() {
         // Parse file in worker thread with progress reporting
         setIsParsing(true);
         setMatchError(null);
-        setParseProgress({ current: 0, total: 0 });
 
         const result = await workerApi.parseFile(
           content,
           proxy((current: number, total: number) => {
-            setParseProgress({ current, total });
+            const progress = total > 0 ? (current / total) * 100 : 0;
+            if (progressBarRef.current) {
+              progressBarRef.current.style.width = `${progress}%`;
+            }
+            if (progressTextRef.current) {
+              progressTextRef.current.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} lines processed`;
+            }
           }),
         );
 
@@ -90,12 +101,17 @@ function App() {
 
         // Match SNPs using worker
         setIsMatching(true);
-        setMatchProgress({ current: 0, total: 0 });
 
         const matchedSNPs = await workerApi.matchSNPs(
           result.genotypes,
           proxy((current: number, total: number) => {
-            setMatchProgress({ current, total });
+            const progress = total > 0 ? (current / total) * 100 : 0;
+            if (progressBarRef.current) {
+              progressBarRef.current.style.width = `${progress}%`;
+            }
+            if (progressTextRef.current) {
+              progressTextRef.current.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} processed`;
+            }
           }),
         );
 
@@ -114,11 +130,9 @@ function App() {
 
   const handleReset = useCallback(() => {
     setParseResult(null);
-    setParseProgress({ current: 0, total: 0 });
-    setMatchProgress({ current: 0, total: 0 });
     setMatches(null);
     setMatchError(null);
-    setMode("browse");
+    setMode("upload");
   }, []);
 
   // Determine app state
@@ -168,9 +182,15 @@ function App() {
             <div className="mb-4 text-5xl">⏳</div>
             <h2 className="mb-4 text-2xl font-semibold text-gray-800">Loading SNP Database...</h2>
             <div className="mx-auto mb-4 h-5 w-full max-w-md overflow-hidden rounded-full bg-gray-200">
-              <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${dbProgress}%` }} />
+              <div
+                ref={progressBarRef}
+                className="h-full bg-blue-500 transition-all duration-300"
+                style={{ width: "0%" }}
+              />
             </div>
-            <p className="text-gray-600">{Math.round(dbProgress)}% complete</p>
+            <p ref={progressTextRef} className="text-gray-600">
+              0% complete
+            </p>
             <p className="mt-2 text-xs text-gray-500">Loading 155MB database (~30-60 seconds)</p>
           </div>
         )}
@@ -207,14 +227,13 @@ function App() {
             <h2 className="mb-4 text-2xl font-semibold text-gray-800">Parsing your file...</h2>
             <div className="mx-auto mb-4 h-5 w-full max-w-md overflow-hidden rounded-full bg-gray-200">
               <div
+                ref={progressBarRef}
                 className="h-full bg-blue-500 transition-all duration-300"
-                style={{
-                  width: `${parseProgress.total > 0 ? (parseProgress.current / parseProgress.total) * 100 : 0}%`,
-                }}
+                style={{ width: "0%" }}
               />
             </div>
-            <p className="text-gray-600">
-              {parseProgress.current.toLocaleString()} / {parseProgress.total.toLocaleString()} lines processed
+            <p ref={progressTextRef} className="text-gray-600">
+              0 / 0 lines processed
             </p>
           </div>
         )}
@@ -231,14 +250,13 @@ function App() {
             )}
             <div className="mx-auto mb-4 h-5 w-full max-w-md overflow-hidden rounded-full bg-gray-200">
               <div
+                ref={progressBarRef}
                 className="h-full bg-green-500 transition-all duration-300"
-                style={{
-                  width: `${matchProgress.total > 0 ? (matchProgress.current / matchProgress.total) * 100 : 0}%`,
-                }}
+                style={{ width: "0%" }}
               />
             </div>
-            <p className="text-gray-600">
-              {matchProgress.current.toLocaleString()} / {matchProgress.total.toLocaleString()} processed
+            <p ref={progressTextRef} className="text-gray-600">
+              0 / 0 processed
             </p>
           </div>
         )}

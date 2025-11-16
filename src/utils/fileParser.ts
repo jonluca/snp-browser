@@ -37,13 +37,6 @@ export function parse23andMeFile(fileContent: string): ParseResult {
 
     const [rsid, chromosome, position, genotype] = parts;
 
-    // Validate rsid format (should start with 'rs' or 'i')
-    if (!rsid.match(/^(rs|i)\d+/i)) {
-      errors.push(`Line ${i + 1}: Invalid rsid format: ${rsid}`);
-      skippedLines++;
-      continue;
-    }
-
     genotypes.push({
       rsid: rsid.toLowerCase(), // Normalize to lowercase for matching
       chromosome,
