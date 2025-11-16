@@ -1,6 +1,6 @@
 import { expose } from "comlink";
 import initSqlJs, { type Database } from "sql.js";
-import type { UserGenotype, MatchedSNP, SNPRecord } from "../types/snp";
+import type { UserGenotype, MatchedSNP, SNPRecord, ParsedSNPData } from "../types/snp";
 
 /**
  * Worker state - holds the loaded database
@@ -8,19 +8,53 @@ import type { UserGenotype, MatchedSNP, SNPRecord } from "../types/snp";
 let db: Database | null = null;
 
 /**
- * All columns to select from the snps table
+ * All columns to select from the snps table (actual schema)
  */
-const SNP_COLUMNS = `
-  rsid, content, chromosome, position, gene, gene_s,
-  orientation, assembly, genome_build, dbsnp_build, stabilized_orientation,
-  geno1, geno2, geno3,
-  clin_chromosome, clin_rsid, clin_sig, clin_disease, clin_dbn, clin_hgvs,
-  clin_origin, clin_accession, clin_reversed, clin_fwd_ref, clin_fwd_alt,
-  clin_ref, clin_alt, clin_rspos, clin_dbsnp_build_id, clin_ssr, clin_sao,
-  clin_vp, clin_geneinfo, clin_gene_name, clin_gene_id, clin_wgt, clin_vc,
-  clin_clnalle, clin_tags, clin_clndsdb, clin_clndsdbid, clin_clnrevstat,
-  clin_clnsrc, clin_clnsrcid, pmid, pmid_title
+const SNP_COLUMNS = `rsid, content, scraped_at`;
+
+/**
+ * Columns to select from genotypes table joined with snps (actual schema)
+ */
+const GENOTYPE_JOIN_COLUMNS = `
+  g.id as genotype_id,
+  g.content as genotype_content,
+  g.scraped_at as genotype_scraped_at,
+  g.snp_id,
+  g.genotype,
+  s.rsid,
+  s.content as snp_content,
+  s.scraped_at as snp_scraped_at
 `;
+
+/**
+ * Extract magnitude from SNPedia content
+ */
+function extractMagnitude(content: string): number | undefined {
+  // Look for magnitude patterns like "magnitude=3" or "Magnitude: 3"
+  const magnitudeMatch = content.match(/magnitude[:\s=]+(\d+(?:\.\d+)?)/i);
+  if (magnitudeMatch && magnitudeMatch[1]) {
+    const mag = parseFloat(magnitudeMatch[1]);
+    return isNaN(mag) ? undefined : mag;
+  }
+  return undefined;
+}
+
+/**
+ * Parse content fields to extract structured data
+ */
+function parseContentData(rsid: string, snpContent: string, genotypeContent?: string): ParsedSNPData {
+  // Extract magnitude from genotype-specific content first, fall back to SNP content
+  const magnitude = genotypeContent
+    ? (extractMagnitude(genotypeContent) ?? extractMagnitude(snpContent))
+    : extractMagnitude(snpContent);
+
+  return {
+    rsid,
+    rawContent: snpContent,
+    genotypeContent,
+    magnitude,
+  };
+}
 
 /**
  * Matches SNPs in batches to avoid SQLite parameter limits
@@ -37,22 +71,57 @@ async function matchSNPsInBatches(
     const batch = genotypes.slice(i, Math.min(i + batchSize, genotypes.length));
     const rsids = batch.map((g) => g.rsid);
 
-    // Create parameterized query
+    // Create parameterized query - join genotypes with snps on snp_id
     const placeholders = rsids.map(() => "?").join(",");
-    const query = `SELECT ${SNP_COLUMNS} FROM snps WHERE rsid IN (${placeholders})`;
+    const query = `
+      SELECT ${GENOTYPE_JOIN_COLUMNS}
+      FROM genotypes g
+      INNER JOIN snps s ON g.snp_id = s.rsid
+      WHERE g.snp_id IN (${placeholders})
+    `;
 
     try {
       const stmt = database.prepare(query);
       stmt.bind(rsids);
 
       while (stmt.step()) {
-        const row = stmt.getAsObject() as unknown as SNPRecord;
-        const userGenotype = batch.find((g) => g.rsid === row.rsid);
+        const row = stmt.getAsObject();
+        const snp_id = row.snp_id as string;
+        const genotype = row.genotype as string;
+
+        // Find matching user genotype - match both rsid and genotype value if present
+        const userGenotype = batch.find((g) => {
+          const rsidMatch = g.rsid === snp_id;
+          // If genotype column exists and is not empty, also match genotype value
+          if (genotype && genotype.trim()) {
+            return rsidMatch && g.genotype === genotype;
+          }
+          return rsidMatch;
+        });
 
         if (userGenotype) {
+          const rsid = row.rsid as string;
+          const snpContent = (row.snp_content as string) || "";
+          const genotypeContent = (row.genotype_content as string) || "";
+
+          // Parse content to extract structured data
+          const parsedData = parseContentData(rsid, snpContent, genotypeContent);
+
           matches.push({
             ...userGenotype,
-            snpData: row,
+            snpData: {
+              rsid,
+              content: snpContent,
+              scraped_at: row.snp_scraped_at as string | undefined,
+            },
+            genotypeData: {
+              id: row.genotype_id as string,
+              content: genotypeContent,
+              scraped_at: row.genotype_scraped_at as string | undefined,
+              snp_id: snp_id,
+              genotype: genotype,
+            },
+            parsedData,
           });
         }
       }
@@ -88,7 +157,9 @@ const workerApi = {
       onProgress(30);
 
       // Fetch the database file with progress tracking
-      const response = await fetch(dbPath);
+      const response = await fetch(dbPath, {
+        credentials: "omit",
+      });
       if (!response.ok) {
         throw new Error(`Failed to load database: ${response.statusText}`);
       }
