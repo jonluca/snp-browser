@@ -93,7 +93,7 @@ async function matchSNPsInBatches(
         const rowGenotype = row.genotype as string;
         // replace all non alphanumeric characters and convert to lowercase for matching
         const genotype = rowGenotype
-          .replace(/[^a-z0-9\-]/gi, "")
+          .replace(/[^a-z0-9-]/gi, "")
           .toLowerCase()
           .trim();
 

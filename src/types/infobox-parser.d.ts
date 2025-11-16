@@ -1,6 +1,6 @@
 declare module "infobox-parser" {
   interface ParsedTemplate {
-    general?: Record<string, string | number | boolean>;
+    general?: Record<string, unknown>;
     lists?: unknown[];
     tables: unknown[];
   }
