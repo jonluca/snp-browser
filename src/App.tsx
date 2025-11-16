@@ -10,7 +10,7 @@ import { DB_URL } from "./constants.ts";
 type AppMode = "upload" | "browse";
 
 function App() {
-  const [mode, setMode] = useState<AppMode>("browse");
+  const [mode, setMode] = useState<AppMode>("upload");
   const [dbProgress, setDbProgress] = useState(0);
   const [isDbLoading, setIsDbLoading] = useState(true);
   const [dbError, setDbError] = useState<Error | null>(null);
@@ -24,8 +24,6 @@ function App() {
 
   // Initialize persistent worker
   const { api: workerApi, isReady: isWorkerReady, error: workerError } = useSNPMatcherWorker();
-
-  const isParsing = false; // We'll set this when parsing
 
   // Load database when worker is ready
   useEffect(() => {
@@ -190,14 +188,6 @@ function App() {
             {mode === "browse" && workerApi && <SNPBrowser workerApi={workerApi} />}
             {mode === "upload" && <FileUpload onFileSelect={handleFileSelect} />}
           </>
-        )}
-
-        {/* Parsing (this state is brief, might not show) */}
-        {isParsing && (
-          <div className="py-10 text-center">
-            <div className="mb-4 text-5xl">📄</div>
-            <h2 className="text-2xl font-semibold text-gray-800">Parsing your genomic data...</h2>
-          </div>
         )}
 
         {/* Matching SNPs */}

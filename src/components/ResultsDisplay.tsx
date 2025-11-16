@@ -9,14 +9,20 @@ interface ResultsDisplayProps {
 export function ResultsDisplay({ matches }: ResultsDisplayProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedSNP, setSelectedSNP] = useState<MatchedSNP | null>(null);
+  const [onlyWithGenotype, setOnlyWithGenotype] = useState(true); // Filter by default
 
   const filteredMatches = useMemo(() => {
     let filtered = matches;
 
+    // Filter by genotype match (only show SNPs with matching genotype data)
+    if (onlyWithGenotype) {
+      filtered = filtered.filter((match) => match.genotypeData !== undefined);
+    }
+
     // Apply search filter
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
-      filtered = matches.filter(
+      filtered = filtered.filter(
         (match) =>
           match.rsid.toLowerCase().includes(term) ||
           match.genotype.toLowerCase().includes(term) ||
@@ -32,7 +38,7 @@ export function ResultsDisplay({ matches }: ResultsDisplayProps) {
       const magB = b.parsedData.magnitude ?? -1;
       return magB - magA;
     });
-  }, [matches, searchTerm]);
+  }, [matches, searchTerm, onlyWithGenotype]);
 
   const itemContent = (index: number) => {
     const match = filteredMatches[index];
@@ -80,11 +86,20 @@ export function ResultsDisplay({ matches }: ResultsDisplayProps) {
           onChange={(e) => setSearchTerm(e.target.value)}
           className="w-full rounded border border-gray-300 p-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
-        {searchTerm && (
-          <div className="mt-1 text-xs text-gray-600">
+        <div className="mt-2 flex items-center justify-between">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-700">
+            <input
+              type="checkbox"
+              checked={onlyWithGenotype}
+              onChange={(e) => setOnlyWithGenotype(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+            />
+            <span>Only show SNPs with matching genotype data</span>
+          </label>
+          <div className="text-xs text-gray-600">
             Showing {filteredMatches.length} of {matches.length} results
           </div>
-        )}
+        </div>
       </div>
 
       <div className="flex min-h-0 flex-1 gap-4">

@@ -67,6 +67,9 @@ async function matchSNPsInBatches(
   const matches: MatchedSNP[] = [];
   const batchSize = 500; // Stay well under SQLite's 999 parameter limit
 
+  // create index on lowercase snp_id for faster lookups
+  database.run(`CREATE INDEX IF NOT EXISTS idx_genotypes_snp_id_lower ON genotypes(lower(snp_id));`);
+
   for (let i = 0; i < genotypes.length; i += batchSize) {
     const batch = genotypes.slice(i, Math.min(i + batchSize, genotypes.length));
     const rsids = batch.map((g) => g.rsid);
@@ -77,7 +80,7 @@ async function matchSNPsInBatches(
       SELECT ${GENOTYPE_JOIN_COLUMNS}
       FROM genotypes g
       INNER JOIN snps s ON g.snp_id = s.rsid
-      WHERE g.snp_id IN (${placeholders})
+      WHERE lower(g.snp_id) IN (${placeholders})
     `;
 
     try {
