@@ -43,24 +43,22 @@ export function parseWikiContent(content: string) {
  * Extracts template data from WikiMedia content
  * For example, extracts Genotype template parameters
  */
-export function extractTemplateData(content: string, templateName: string): Record<string, string> | null {
+export function extractTemplateData(content: string): Record<string, string> | null {
   if (!content) return null;
 
   try {
     // Use infobox-parser to extract template data
     const parsed = InfoboxParser(content);
 
-    if (!parsed || parsed.length === 0) return null;
-
     // Find the template by name (case-insensitive)
-    const template = parsed.find((t) => t.type === "template" && t.name?.toLowerCase() === templateName.toLowerCase());
+    const template = parsed.general;
 
-    if (!template || !template.data) return null;
+    if (!template) return null;
 
     const params: Record<string, string> = {};
 
     // Extract all parameters from the template data
-    Object.entries(template.data).forEach(([key, value]) => {
+    Object.entries(template).forEach(([key, value]) => {
       if (value !== null && value !== undefined) {
         params[key] = String(value);
       }

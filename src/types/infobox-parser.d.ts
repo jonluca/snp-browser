@@ -1,11 +1,11 @@
 declare module "infobox-parser" {
   interface ParsedTemplate {
-    type: "template" | "infobox";
-    name?: string;
-    data?: Record<string, string | number | boolean>;
+    general?: Record<string, string | number | boolean>;
+    lists?: unknown[];
+    tables: unknown[];
   }
 
-  function InfoboxParser(content: string): ParsedTemplate[];
+  function InfoboxParser(content: string): ParsedTemplate;
 
   export default InfoboxParser;
 }
