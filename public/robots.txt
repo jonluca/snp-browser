@@ -1,0 +1,31 @@
+# robots.txt for SNP Browser
+User-agent: *
+Allow: /
+
+# Sitemap location (update when sitemap is added)
+# Sitemap: https://snpbrowser.com/sitemap.xml
+
+# Allow common good bots
+User-agent: Googlebot
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: Slurp
+Allow: /
+
+User-agent: DuckDuckBot
+Allow: /
+
+User-agent: Baiduspider
+Allow: /
+
+User-agent: YandexBot
+Allow: /
+
+User-agent: Applebot
+Allow: /
+
+# Crawl-delay for polite crawling (in seconds)
+Crawl-delay: 1

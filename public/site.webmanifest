@@ -1,11 +1,28 @@
 {
-  "name": "SNPBrowser",
-  "short_name": "SNPBrowser",
+  "name": "SNP Browser - Genetic Data Explorer",
+  "short_name": "SNP Browser",
+  "description": "Privacy-preserving genomic data browser for exploring SNPedia and 23andMe genetic variants",
+  "start_url": "/",
+  "scope": "/",
   "icons": [
-    { "src": "/android-chrome-192x192.png", "sizes": "192x192", "type": "image/png" },
-    { "src": "/android-chrome-512x512.png", "sizes": "512x512", "type": "image/png" }
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
   ],
-  "theme_color": "#ffffff",
-  "background_color": "#ffffff",
-  "display": "standalone"
+  "theme_color": "#3b82f6",
+  "background_color": "#f9fafb",
+  "display": "standalone",
+  "orientation": "any",
+  "categories": ["health", "medical", "utilities", "productivity"],
+  "lang": "en-US",
+  "dir": "ltr"
 }

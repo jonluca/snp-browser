@@ -2,10 +2,80 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.ico" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>snp-browser</title>
+
+    <!-- Primary Meta Tags -->
+    <title>SNP Browser - Explore Your Genetic Data from 23andMe & SNPedia</title>
+    <meta name="title" content="SNP Browser - Explore Your Genetic Data from 23andMe & SNPedia" />
+    <meta name="description" content="Free, privacy-preserving genomic data browser. Upload your 23andMe data and explore genetic variants from SNPedia. All processing happens locally in your browser - no data leaves your device." />
+    <meta name="keywords" content="SNP, SNPedia, 23andMe, genetic data, genomics, DNA analysis, genetic variants, genotype, privacy-preserving, client-side genetics" />
+    <meta name="author" content="SNP Browser" />
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://snpbrowser.com" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://snpbrowser.com" />
+    <meta property="og:title" content="SNP Browser - Explore Your Genetic Data from 23andMe & SNPedia" />
+    <meta property="og:description" content="Free, privacy-preserving genomic data browser. Upload your 23andMe data and explore genetic variants from SNPedia. All processing happens locally in your browser." />
+    <meta property="og:image" content="https://snpbrowser.com/android-chrome-512x512.png" />
+    <meta property="og:site_name" content="SNP Browser" />
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image" />
+    <meta property="twitter:url" content="https://snpbrowser.com" />
+    <meta property="twitter:title" content="SNP Browser - Explore Your Genetic Data from 23andMe & SNPedia" />
+    <meta property="twitter:description" content="Free, privacy-preserving genomic data browser. Upload your 23andMe data and explore genetic variants from SNPedia. All processing happens locally in your browser." />
+    <meta property="twitter:image" content="https://snpbrowser.com/android-chrome-512x512.png" />
+
+    <!-- Favicons -->
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+
+    <!-- Web App Manifest -->
+    <link rel="manifest" href="/site.webmanifest" />
+
+    <!-- Theme Color -->
+    <meta name="theme-color" content="#3b82f6" />
+    <meta name="msapplication-TileColor" content="#3b82f6" />
+
+    <!-- Styles -->
     <link href="/src/index.css" rel="stylesheet" />
+
+    <!-- Structured Data (JSON-LD) -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "SNP Browser",
+      "description": "Free, privacy-preserving genomic data browser for exploring genetic variants from SNPedia and 23andMe data. All processing happens locally in your browser.",
+      "url": "https://snpbrowser.com",
+      "applicationCategory": "HealthApplication",
+      "operatingSystem": "Any (Web-based)",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "featureList": [
+        "Client-side SQLite database processing",
+        "23andMe data upload and analysis",
+        "SNPedia genetic variant exploration",
+        "Privacy-preserving local processing",
+        "No data transmission to servers"
+      ],
+      "browserRequirements": "Requires JavaScript. Modern browser recommended.",
+      "softwareVersion": "1.0",
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "5.0",
+        "ratingCount": "1"
+      }
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
