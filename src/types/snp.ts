@@ -14,6 +14,13 @@ export interface GenotypeRecord {
   genotype: string;
 }
 
+// Raw database record from genosets table
+export interface GenosetRecord {
+  id: string; // Always starts with "gs"
+  content: string;
+  scraped_at?: string;
+}
+
 // User's genotype from uploaded file
 export interface UserGenotype {
   rsid: string;
@@ -37,6 +44,18 @@ export interface MatchedSNP extends UserGenotype {
   snpData: SNPRecord;
   genotypeData?: GenotypeRecord;
   parsedData: ParsedSNPData; // Enriched data extracted from content
+}
+
+// Genoset matched with user's genotypes
+export interface MatchedGenoset {
+  genoset: GenosetRecord;
+  matchedGenotypes: MatchedSNP[]; // The user's genotypes that contribute to this genoset
+  parsedData: {
+    id: string;
+    rawContent: string;
+    magnitude?: number;
+    [key: string]: unknown;
+  };
 }
 
 export interface ParseResult {

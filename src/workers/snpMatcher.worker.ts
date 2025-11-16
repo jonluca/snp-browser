@@ -1,6 +1,14 @@
 import { expose } from "comlink";
 import initSqlJs, { type Database } from "sql.js";
-import type { UserGenotype, MatchedSNP, SNPRecord, ParsedSNPData, ParseResult } from "../types/snp";
+import type {
+  UserGenotype,
+  MatchedSNP,
+  SNPRecord,
+  ParsedSNPData,
+  ParseResult,
+  GenosetRecord,
+  MatchedGenoset,
+} from "../types/snp";
 
 /**
  * Worker state - holds the loaded database
@@ -246,6 +254,82 @@ function validate23andMeFileInWorker(fileContent: string): { valid: boolean; rea
 }
 
 /**
+ * Matches genosets based on matched SNPs
+ * A genoset matches if its content references any of the matched genotype IDs
+ */
+async function matchGenosets(
+  database: Database,
+  matchedSNPs: MatchedSNP[],
+  onProgress: (current: number, total: number) => void,
+): Promise<MatchedGenoset[]> {
+  const matchedGenosets: MatchedGenoset[] = [];
+
+  // Build a map of genotype IDs to matched SNPs for quick lookup
+  const genotypeIdToMatch = new Map<string, MatchedSNP>();
+  matchedSNPs.forEach((match) => {
+    if (match.genotypeData) {
+      genotypeIdToMatch.set(match.genotypeData.id, match);
+    }
+  });
+
+  // Get all genosets (IDs start with "gs")
+  const query = `SELECT id, content, scraped_at FROM genosets`;
+
+  try {
+    const stmt = database.prepare(query);
+    const allGenosets: GenosetRecord[] = [];
+
+    while (stmt.step()) {
+      const row = stmt.getAsObject();
+      allGenosets.push({
+        id: row.id as string,
+        content: row.content as string,
+        scraped_at: row.scraped_at as string | undefined,
+      });
+    }
+    stmt.free();
+
+    // Check each genoset for matching genotype IDs
+    allGenosets.forEach((genoset, index) => {
+      const matchingGenotypes: MatchedSNP[] = [];
+
+      // Search genoset content for genotype IDs
+      // Genotype IDs are in format like rsXXXXXX(Y;Y) or similar
+      genotypeIdToMatch.forEach((matchedSNP, genotypeId) => {
+        // Check if this genotype ID appears in the genoset content
+        if (genoset.content.toLowerCase().includes(genotypeId.toLowerCase())) {
+          matchingGenotypes.push(matchedSNP);
+        }
+      });
+
+      // Only include genosets that have at least one matching genotype
+      if (matchingGenotypes.length > 0) {
+        const magnitude = extractMagnitude(genoset.content);
+
+        matchedGenosets.push({
+          genoset,
+          matchedGenotypes: matchingGenotypes,
+          parsedData: {
+            id: genoset.id,
+            rawContent: genoset.content,
+            magnitude,
+          },
+        });
+      }
+
+      // Report progress
+      if (index % 100 === 0 || index === allGenosets.length - 1) {
+        onProgress(index + 1, allGenosets.length);
+      }
+    });
+  } catch (error) {
+    console.error("Error matching genosets:", error);
+  }
+
+  return matchedGenosets;
+}
+
+/**
  * Worker API exposed via Comlink
  */
 const workerApi = {
@@ -364,6 +448,20 @@ const workerApi = {
     }
 
     return matchSNPsInBatches(db, genotypes, onProgress);
+  },
+
+  /**
+   * Matches genosets based on matched SNPs
+   */
+  async matchGenosets(
+    matchedSNPs: MatchedSNP[],
+    onProgress: (current: number, total: number) => void,
+  ): Promise<MatchedGenoset[]> {
+    if (!db) {
+      throw new Error("Database not loaded. Call loadDatabase first.");
+    }
+
+    return matchGenosets(db, matchedSNPs, onProgress);
   },
 
   /**

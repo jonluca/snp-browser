@@ -4,7 +4,7 @@ import { useSNPMatcherWorker, proxy } from "./hooks/useSNPMatcherWorker";
 import { FileUpload } from "./components/FileUpload";
 import { ResultsDisplay } from "./components/ResultsDisplay";
 import { SNPBrowser } from "./components/SNPBrowser";
-import type { ParseResult, MatchedSNP } from "./types/snp";
+import type { ParseResult, MatchedSNP, MatchedGenoset } from "./types/snp";
 import { DB_URL } from "./constants.ts";
 
 type AppMode = "upload" | "browse";
@@ -18,7 +18,9 @@ function App() {
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [matches, setMatches] = useState<MatchedSNP[] | null>(null);
+  const [genosets, setGenosets] = useState<MatchedGenoset[] | null>(null);
   const [isMatching, setIsMatching] = useState(false);
+  const [isMatchingGenosets, setIsMatchingGenosets] = useState(false);
   const [matchError, setMatchError] = useState<Error | null>(null);
 
   // Refs for direct DOM manipulation of progress bar (shared across all operations)
@@ -110,18 +112,38 @@ function App() {
               progressBarRef.current.style.width = `${progress}%`;
             }
             if (progressTextRef.current) {
-              progressTextRef.current.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} processed`;
+              progressTextRef.current.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} SNPs processed`;
             }
           }),
         );
 
         setMatches(matchedSNPs);
         setIsMatching(false);
+
+        // Match genosets
+        setIsMatchingGenosets(true);
+
+        const matchedGenosets = await workerApi.matchGenosets(
+          matchedSNPs,
+          proxy((current: number, total: number) => {
+            const progress = total > 0 ? (current / total) * 100 : 0;
+            if (progressBarRef.current) {
+              progressBarRef.current.style.width = `${progress}%`;
+            }
+            if (progressTextRef.current) {
+              progressTextRef.current.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} genosets checked`;
+            }
+          }),
+        );
+
+        setGenosets(matchedGenosets);
+        setIsMatchingGenosets(false);
       } catch (err) {
         console.error("Error processing file:", err);
         setMatchError(err instanceof Error ? err : new Error("Unknown error"));
         setIsParsing(false);
         setIsMatching(false);
+        setIsMatchingGenosets(false);
         alert(err instanceof Error ? err.message : "Unknown error");
       }
     },
@@ -131,12 +153,13 @@ function App() {
   const handleReset = useCallback(() => {
     setParseResult(null);
     setMatches(null);
+    setGenosets(null);
     setMatchError(null);
     setMode("upload");
   }, []);
 
   // Determine app state
-  const hasResults = matches && matches.length >= 0;
+  const hasResults = matches && matches.length >= 0 && genosets !== null;
   const hasError = dbError || matchError || workerError;
 
   return (
@@ -213,7 +236,7 @@ function App() {
         )}
 
         {/* Main content area */}
-        {!isDbLoading && !hasError && !hasResults && !isParsing && !isMatching && (
+        {!isDbLoading && !hasError && !hasResults && !isParsing && !isMatching && !isMatchingGenosets && (
           <>
             {mode === "browse" && workerApi && <SNPBrowser workerApi={workerApi} />}
             {mode === "upload" && <FileUpload onFileSelect={handleFileSelect} />}
@@ -256,13 +279,36 @@ function App() {
               />
             </div>
             <p ref={progressTextRef} className="text-gray-600">
-              0 / 0 processed
+              0 / 0 SNPs processed
+            </p>
+          </div>
+        )}
+
+        {/* Matching Genosets */}
+        {isMatchingGenosets && (
+          <div className="py-10 text-center">
+            <div className="mb-4 text-5xl">🧬</div>
+            <h2 className="mb-4 text-2xl font-semibold text-gray-800">Finding matching genosets...</h2>
+            {matches && (
+              <p className="mb-4 text-gray-600">
+                Checking genosets against {matches.length.toLocaleString()} matched SNPs
+              </p>
+            )}
+            <div className="mx-auto mb-4 h-5 w-full max-w-md overflow-hidden rounded-full bg-gray-200">
+              <div
+                ref={progressBarRef}
+                className="h-full bg-purple-500 transition-all duration-300"
+                style={{ width: "0%" }}
+              />
+            </div>
+            <p ref={progressTextRef} className="text-gray-600">
+              0 / 0 genosets checked
             </p>
           </div>
         )}
 
         {/* Results */}
-        {hasResults && matches && !isMatching && (
+        {hasResults && matches && genosets && !isMatching && !isMatchingGenosets && (
           <>
             <div className="mb-4 flex items-center justify-between">
               <div>
@@ -280,7 +326,7 @@ function App() {
                 Upload New File
               </button>
             </div>
-            <ResultsDisplay matches={matches} />
+            <ResultsDisplay matches={matches} genosets={genosets} />
           </>
         )}
       </div>
