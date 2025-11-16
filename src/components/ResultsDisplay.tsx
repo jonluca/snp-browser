@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { twMerge } from "tailwind-merge";
 import { Virtuoso } from "react-virtuoso";
 import type { MatchedSNP } from "../types/snp";
+import { WikiContent } from "./WikiContent";
 
 interface ResultsDisplayProps {
   matches: MatchedSNP[];
@@ -34,7 +35,7 @@ export function ResultsDisplay({ matches }: ResultsDisplayProps) {
 
     // Sort by magnitude (descending) - higher magnitudes first
     // Put items without magnitude at the end
-    return [...filtered].sort((a, b) => {
+    return filtered.sort((a, b) => {
       const magA = a.parsedData.magnitude ?? -1;
       const magB = b.parsedData.magnitude ?? -1;
       return magB - magA;
@@ -79,7 +80,7 @@ export function ResultsDisplay({ matches }: ResultsDisplayProps) {
     <div className="flex h-full flex-col gap-4">
       <div>
         <h2 className="mb-2 text-xl font-semibold text-gray-900">
-          Found {matches.length} matching SNP{matches.length !== 1 ? "s" : ""}
+          Found {matches.length.toLocaleString()} matching SNP{matches.length !== 1 ? "s" : ""}
         </h2>
         <input
           type="text"
@@ -99,15 +100,15 @@ export function ResultsDisplay({ matches }: ResultsDisplayProps) {
             <span>Only show SNPs with matching genotype data</span>
           </label>
           <div className="text-xs text-gray-600">
-            Showing {filteredMatches.length} of {matches.length} results
+            Showing {filteredMatches.length.toLocaleString()} of {matches.length.toLocaleString()} results
           </div>
         </div>
       </div>
 
-      <div className="flex min-h-0 flex-1 gap-4">
+      <div className="flex flex-1 gap-4 max-h-[70vh] min-h-[70vh]">
         {/* Left panel - List of matches */}
         <div className="w-[400px] flex-shrink-0 overflow-hidden rounded border border-gray-300">
-          <Virtuoso style={{ height: "600px" }} totalCount={filteredMatches.length} itemContent={itemContent} />
+          <Virtuoso style={{ height: "100%" }} totalCount={filteredMatches.length} itemContent={itemContent} />
         </div>
 
         {/* Right panel - Selected SNP details */}
@@ -138,9 +139,7 @@ export function ResultsDisplay({ matches }: ResultsDisplayProps) {
                   <h4 className="mb-2 text-sm font-semibold text-gray-800">
                     Genotype-Specific Information ({selectedSNP.genotype})
                   </h4>
-                  <div className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-gray-800">
-                    {selectedSNP.genotypeData.content}
-                  </div>
+                  <WikiContent content={selectedSNP.genotypeData.content} />
                 </div>
               )}
 
@@ -148,9 +147,7 @@ export function ResultsDisplay({ matches }: ResultsDisplayProps) {
               {selectedSNP.snpData.content && (
                 <div className="mb-4 rounded bg-white p-3 shadow-sm">
                   <h4 className="mb-2 text-sm font-semibold text-gray-800">General SNP Information</h4>
-                  <div className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-gray-800">
-                    {selectedSNP.snpData.content}
-                  </div>
+                  <WikiContent content={selectedSNP.snpData.content} />
                 </div>
               )}
             </div>

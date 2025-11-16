@@ -4,6 +4,7 @@ import { Virtuoso } from "react-virtuoso";
 import type { Remote } from "comlink";
 import type { SNPRecord } from "../types/snp";
 import type { SNPMatcherWorkerApi } from "../workers/snpMatcher.worker";
+import { WikiContent } from "./WikiContent";
 
 interface SNPBrowserProps {
   workerApi: Remote<SNPMatcherWorkerApi>;
@@ -57,48 +58,32 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
   const [total, setTotal] = useState(0);
   const [selectedSNP, setSelectedSNP] = useState<SNPRecord | null>(null);
   const [isSearching, setIsSearching] = useState(false);
-  const [page, setPage] = useState(0);
-  const pageSize = 50;
 
-  const performSearch = useCallback(
-    async (resetPage = false) => {
-      setIsSearching(true);
-      try {
-        const currentPage = resetPage ? 0 : page;
-        if (resetPage) setPage(0);
+  const performSearch = useCallback(async () => {
+    setIsSearching(true);
+    try {
+      const { results: newResults, total: newTotal } = await workerApi.searchSNPs({
+        searchTerm: searchTerm || undefined,
+        chromosome: chromosome || undefined,
+        gene: gene || undefined,
+        clinicalSignificance: clinicalSignificance || undefined,
+        disease: disease || undefined,
+        limit: 1000000, // Load all results for virtualization
+      });
 
-        const { results: newResults, total: newTotal } = await workerApi.searchSNPs({
-          searchTerm: searchTerm || undefined,
-          chromosome: chromosome || undefined,
-          gene: gene || undefined,
-          clinicalSignificance: clinicalSignificance || undefined,
-          disease: disease || undefined,
-          limit: pageSize,
-          offset: currentPage * pageSize,
-        });
-
-        setResults(newResults);
-        setTotal(newTotal);
-      } catch (error) {
-        console.error("Search error:", error);
-      } finally {
-        setIsSearching(false);
-      }
-    },
-    [workerApi, searchTerm, chromosome, gene, clinicalSignificance, disease, page, pageSize],
-  );
+      setResults(newResults);
+      setTotal(newTotal);
+    } catch (error) {
+      console.error("Search error:", error);
+    } finally {
+      setIsSearching(false);
+    }
+  }, [workerApi, searchTerm, chromosome, gene, clinicalSignificance, disease]);
 
   // Perform search when filters change
   useEffect(() => {
-    performSearch(true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchTerm, chromosome, gene, clinicalSignificance, disease]);
-
-  // Perform search when page changes
-  useEffect(() => {
-    performSearch(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+    performSearch();
+  }, [performSearch]);
 
   const handleClearFilters = () => {
     setSearchTerm("");
@@ -106,7 +91,6 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
     setGene("");
     setClinicalSignificance("");
     setDisease("");
-    setPage(0);
   };
 
   const hasActiveFilters = searchTerm || chromosome || gene || clinicalSignificance || disease;
@@ -135,8 +119,6 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
       </div>
     );
   };
-
-  const totalPages = Math.ceil(total / pageSize);
 
   return (
     <div className="flex h-full flex-col gap-4">
@@ -239,33 +221,8 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
       {/* Results area */}
       <div className="flex min-h-0 flex-1 gap-4">
         {/* Left panel - List of results */}
-        <div className="w-[400px] flex-shrink-0">
-          <div className="overflow-hidden rounded border border-gray-300">
-            <Virtuoso style={{ height: "600px" }} totalCount={results.length} itemContent={itemContent} />
-          </div>
-
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="mt-3 flex items-center justify-between">
-              <button
-                onClick={() => setPage((p) => Math.max(0, p - 1))}
-                disabled={page === 0}
-                className="rounded border border-gray-300 bg-white px-3 py-1 text-sm disabled:opacity-50"
-              >
-                Previous
-              </button>
-              <span className="text-sm text-gray-600">
-                Page {page + 1} of {totalPages}
-              </span>
-              <button
-                onClick={() => setPage((p) => Math.min(totalPages - 1, p + 1))}
-                disabled={page >= totalPages - 1}
-                className="rounded border border-gray-300 bg-white px-3 py-1 text-sm disabled:opacity-50"
-              >
-                Next
-              </button>
-            </div>
-          )}
+        <div className="w-[400px] flex-shrink-0 overflow-hidden rounded border border-gray-300">
+          <Virtuoso style={{ height: "600px" }} totalCount={results.length} itemContent={itemContent} />
         </div>
 
         {/* Right panel - Selected SNP details */}
@@ -278,9 +235,7 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
               {selectedSNP.content && (
                 <div className="mb-4 rounded bg-white p-3 shadow-sm">
                   <h4 className="mb-2 text-sm font-semibold text-gray-800">SNPedia Information</h4>
-                  <div className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-gray-800">
-                    {selectedSNP.content}
-                  </div>
+                  <WikiContent content={selectedSNP.content} />
                 </div>
               )}
             </div>
