@@ -90,7 +90,9 @@ async function matchSNPsInBatches(
       while (stmt.step()) {
         const row = stmt.getAsObject();
         const snp_id = row.snp_id as string;
-        const genotype = row.genotype as string;
+        const rowGenotype = row.genotype as string;
+        // replace all non alphanumeric characters and convert to lowercase for matching
+        const genotype = rowGenotype.replace(/[^a-z0-9]/gi, "").toLowerCase();
 
         // Find matching user genotype - match both rsid and genotype value if present
         const userGenotype = batch.find((g) => {
@@ -196,7 +198,7 @@ async function parse23andMeFileInWorker(
       rsid: rsid.toLowerCase(), // Normalize to lowercase for matching
       chromosome,
       position,
-      genotype,
+      genotype: genotype.toLowerCase(),
     });
 
     // Report progress every batch
