@@ -6,6 +6,8 @@ Full privacy preserving - no data is sent to any server; all processing is done 
 
 **Live at: [snpbrowser.com](https://snpbrowser.com)**
 
+![](http://static.snpbrowser.com/snp-browser.png)
+
 ## Data
 
 The original data is originally based on a scrape from [https://github.com/jaykobdetar/SNPedia-Scraper](https://github.com/jaykobdetar/SNPedia-Scraper). The database schema was slightly modified to make querying it easier.
