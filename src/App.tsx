@@ -3,7 +3,6 @@ import { useSNPMatcherWorker, proxy } from "./hooks/useSNPMatcherWorker";
 import { FileUpload } from "./components/FileUpload";
 import { ResultsDisplay } from "./components/ResultsDisplay";
 import { SNPBrowser } from "./components/SNPBrowser";
-import { parse23andMeFile, validate23andMeFile } from "./utils/fileParser";
 import type { ParseResult, MatchedSNP } from "./types/snp";
 import { DB_URL } from "./constants.ts";
 
@@ -17,6 +16,8 @@ function App() {
   const [dbStats, setDbStats] = useState<{ totalSNPs: number } | null>(null);
 
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [parseProgress, setParseProgress] = useState({ current: 0, total: 0 });
+  const [isParsing, setIsParsing] = useState(false);
   const [matchProgress, setMatchProgress] = useState({ current: 0, total: 0 });
   const [matches, setMatches] = useState<MatchedSNP[] | null>(null);
   const [isMatching, setIsMatching] = useState(false);
@@ -67,15 +68,20 @@ function App() {
         // Read file
         const content = await file.text();
 
-        // Validate format
-        const validation = validate23andMeFile(content);
-        if (!validation.valid) {
-          throw new Error(validation.reason || "Invalid file format");
-        }
+        // Parse file in worker thread with progress reporting
+        setIsParsing(true);
+        setMatchError(null);
+        setParseProgress({ current: 0, total: 0 });
 
-        // Parse file
-        const result = parse23andMeFile(content);
+        const result = await workerApi.parseFile(
+          content,
+          proxy((current: number, total: number) => {
+            setParseProgress({ current, total });
+          }),
+        );
+
         setParseResult(result);
+        setIsParsing(false);
 
         if (result.genotypes.length === 0) {
           throw new Error("No valid SNP data found in file");
@@ -83,7 +89,6 @@ function App() {
 
         // Match SNPs using worker
         setIsMatching(true);
-        setMatchError(null);
         setMatchProgress({ current: 0, total: 0 });
 
         const matchedSNPs = await workerApi.matchSNPs(
@@ -98,6 +103,7 @@ function App() {
       } catch (err) {
         console.error("Error processing file:", err);
         setMatchError(err instanceof Error ? err : new Error("Unknown error"));
+        setIsParsing(false);
         setIsMatching(false);
         alert(err instanceof Error ? err.message : "Unknown error");
       }
@@ -107,6 +113,7 @@ function App() {
 
   const handleReset = useCallback(() => {
     setParseResult(null);
+    setParseProgress({ current: 0, total: 0 });
     setMatchProgress({ current: 0, total: 0 });
     setMatches(null);
     setMatchError(null);
@@ -183,11 +190,30 @@ function App() {
         )}
 
         {/* Main content area */}
-        {!isDbLoading && !hasError && !hasResults && (
+        {!isDbLoading && !hasError && !hasResults && !isParsing && !isMatching && (
           <>
             {mode === "browse" && workerApi && <SNPBrowser workerApi={workerApi} />}
             {mode === "upload" && <FileUpload onFileSelect={handleFileSelect} />}
           </>
+        )}
+
+        {/* Parsing file */}
+        {isParsing && (
+          <div className="py-10 text-center">
+            <div className="mb-4 text-5xl">📄</div>
+            <h2 className="mb-4 text-2xl font-semibold text-gray-800">Parsing your file...</h2>
+            <div className="mx-auto mb-4 h-5 w-full max-w-md overflow-hidden rounded-full bg-gray-200">
+              <div
+                className="h-full bg-blue-500 transition-all duration-300"
+                style={{
+                  width: `${parseProgress.total > 0 ? (parseProgress.current / parseProgress.total) * 100 : 0}%`,
+                }}
+              />
+            </div>
+            <p className="text-gray-600">
+              {parseProgress.current.toLocaleString()} / {parseProgress.total.toLocaleString()} lines processed
+            </p>
+          </div>
         )}
 
         {/* Matching SNPs */}

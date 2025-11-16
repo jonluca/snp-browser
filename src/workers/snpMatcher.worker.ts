@@ -1,6 +1,6 @@
 import { expose } from "comlink";
 import initSqlJs, { type Database } from "sql.js";
-import type { UserGenotype, MatchedSNP, SNPRecord, ParsedSNPData } from "../types/snp";
+import type { UserGenotype, MatchedSNP, SNPRecord, ParsedSNPData, ParseResult } from "../types/snp";
 
 /**
  * Worker state - holds the loaded database
@@ -141,9 +141,121 @@ async function matchSNPsInBatches(
 }
 
 /**
+ * Parses a 23andMe genomic data file with progress reporting
+ */
+async function parse23andMeFileInWorker(
+  fileContent: string,
+  onProgress: (current: number, total: number) => void,
+): Promise<ParseResult> {
+  const lines = fileContent.split("\n");
+  const genotypes: UserGenotype[] = [];
+  const errors: string[] = [];
+  let skippedLines = 0;
+  const totalLines = lines.length;
+
+  // Report initial progress
+  onProgress(0, totalLines);
+
+  // Process lines in batches for better performance and progress reporting
+  const batchSize = 1000;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i].trim();
+
+    // Skip empty lines
+    if (!line) {
+      skippedLines++;
+      continue;
+    }
+
+    // Skip comment lines
+    if (line.startsWith("#")) {
+      skippedLines++;
+      continue;
+    }
+
+    // Parse data line
+    const parts = line.split(/\s+/); // Split by whitespace (tabs or spaces)
+
+    if (parts.length < 4) {
+      errors.push(`Line ${i + 1}: Invalid format - expected 4 columns, got ${parts.length}`);
+      skippedLines++;
+      continue;
+    }
+
+    const [rsid, chromosome, position, genotype] = parts;
+
+    // Validate rsid format (should start with 'rs' or 'i')
+    if (!rsid.match(/^(rs|i)\d+/i)) {
+      errors.push(`Line ${i + 1}: Invalid rsid format: ${rsid}`);
+      skippedLines++;
+      continue;
+    }
+
+    genotypes.push({
+      rsid: rsid.toLowerCase(), // Normalize to lowercase for matching
+      chromosome,
+      position,
+      genotype,
+    });
+
+    // Report progress every batch
+    if (i % batchSize === 0 || i === lines.length - 1) {
+      onProgress(i + 1, totalLines);
+    }
+  }
+
+  return {
+    genotypes,
+    totalLines,
+    skippedLines,
+    errors,
+  };
+}
+
+/**
+ * Validates if a file appears to be a 23andMe format file
+ */
+function validate23andMeFileInWorker(fileContent: string): { valid: boolean; reason?: string } {
+  const lines = fileContent.split("\n").slice(0, 100); // Check first 100 lines
+
+  // Should have comment lines
+  const hasComments = lines.some((line) => line.trim().startsWith("#"));
+  if (!hasComments) {
+    return { valid: false, reason: "File doesn't appear to have 23andMe format headers (no # comment lines)" };
+  }
+
+  // Should have data lines with rsid format
+  const hasRsidData = lines.some((line) => {
+    const trimmed = line.trim();
+    return !trimmed.startsWith("#") && trimmed.match(/^(rs|i)\d+/i);
+  });
+
+  if (!hasRsidData) {
+    return { valid: false, reason: "File doesn't contain valid SNP data (no rsid entries found)" };
+  }
+
+  return { valid: true };
+}
+
+/**
  * Worker API exposed via Comlink
  */
 const workerApi = {
+  /**
+   * Parses and validates a 23andMe genomic data file
+   */
+  async parseFile(fileContent: string, onProgress: (current: number, total: number) => void): Promise<ParseResult> {
+    // Validate format first
+    const validation = validate23andMeFileInWorker(fileContent);
+    if (!validation.valid) {
+      throw new Error(validation.reason || "Invalid file format");
+    }
+
+    // Parse file with progress reporting
+    return parse23andMeFileInWorker(fileContent, onProgress);
+  },
+
   /**
    * Loads the database from a URL
    */
