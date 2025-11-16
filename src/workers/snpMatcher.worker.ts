@@ -92,13 +92,16 @@ async function matchSNPsInBatches(
         const snp_id = row.snp_id as string;
         const rowGenotype = row.genotype as string;
         // replace all non alphanumeric characters and convert to lowercase for matching
-        const genotype = rowGenotype.replace(/[^a-z0-9]/gi, "").toLowerCase();
+        const genotype = rowGenotype
+          .replace(/[^a-z0-9]/gi, "")
+          .toLowerCase()
+          .trim();
 
         // Find matching user genotype - match both rsid and genotype value if present
         const userGenotype = batch.find((g) => {
           const rsidMatch = g.rsid === snp_id;
           // If genotype column exists and is not empty, also match genotype value
-          if (genotype && genotype.trim()) {
+          if (genotype && genotype) {
             return rsidMatch && g.genotype === genotype;
           }
           return rsidMatch;
