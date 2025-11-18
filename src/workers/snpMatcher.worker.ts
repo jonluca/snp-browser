@@ -162,6 +162,7 @@ async function parse23andMeFileInWorker(
   fileContent: string,
   onProgress: (current: number, total: number) => void,
 ): Promise<ParseResult> {
+  const is23andMe = fileContent.slice(0, 1000).toLowerCase().includes("23andme");
   const lines = fileContent.split("\n");
   const genotypes: UserGenotype[] = [];
   const errors: string[] = [];
@@ -200,18 +201,24 @@ async function parse23andMeFileInWorker(
 
     const [rsid, chromosome, position, genotype] = parts;
 
-    // Validate rsid format (should start with 'rs' or 'i')
-    if (!rsid.match(/^(rs|i)\d+/i)) {
-      errors.push(`Line ${i + 1}: Invalid rsid format: ${rsid}`);
-      skippedLines++;
-      continue;
-    }
+    // if it's 23andme, we need to swap all C's to G's and G's to C's
+    const genotypeValue = genotype.toLowerCase();
+    // if (is23andMe) {
+    //   genotypeValue = genotype
+    //     .split("")
+    //     .map((char) => {
+    //       if (char === "c") return "g";
+    //       if (char === "g") return "c";
+    //       return char;
+    //     })
+    //     .join("");
+    // }
 
     genotypes.push({
       rsid: rsid.toLowerCase(), // Normalize to lowercase for matching
       chromosome,
       position,
-      genotype: genotype.toLowerCase(),
+      genotype: genotypeValue,
     });
 
     // Report progress every batch

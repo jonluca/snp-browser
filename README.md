@@ -34,16 +34,12 @@ The SNP database is hosted at https://static.snpbrowser.com/snp-2025113.db
 
 ## Development
 
-### Prerequisites
-
-- Node.js 18+ (or Bun)
-- npm, yarn, or bun
-
 ### Getting Started
+
+Development used [bun](https://bun.sh/), so all commands are run with `bun`.
 
 ```bash
 bun install
-
 bun dev
 ```
 
