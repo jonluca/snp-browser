@@ -43,13 +43,47 @@ The SNP database is hosted at https://static.snpbrowser.com/snp-2025113.db
 
 ## Development
 
-### Getting Started
+### Quick Start
 
-Development used [bun](https://bun.sh/), so all commands are run with `bun`.
+For the fastest setup, use the included start scripts that automatically install bun (if needed), install dependencies, and build/run the production version:
+
+**Mac/Linux:**
+```bash
+./start.sh
+```
+
+**Windows (PowerShell - Recommended):**
+```powershell
+.\start.ps1
+```
+
+**Windows (Command Prompt):**
+```cmd
+start.bat
+```
+
+These scripts will:
+1. Check if bun is installed (and install it if needed)
+2. Run `bun install` to install dependencies
+3. Run `bun run prod` to build and preview the production version
+
+### Manual Setup
+
+If you prefer to set up manually, development uses [bun](https://bun.sh/), so all commands are run with `bun`.
 
 ```bash
+# Install bun first (if not already installed)
+curl -fsSL https://bun.sh/install | bash  # Mac/Linux
+# or visit https://bun.sh for Windows instructions
+
+# Install dependencies
 bun install
+
+# Start development server
 bun dev
+
+# Build and run production version
+bun run prod
 ```
 
 ## Supported DNA File Formats
@@ -161,8 +195,10 @@ snp-browser/
 
 ## Building for Production
 
+### Build Only
+
 ```bash
-npm run build
+bun run build
 ```
 
 The build process includes:
@@ -170,3 +206,21 @@ The build process includes:
 1. TypeScript type checking (`tsc -b`)
 2. Vite production build with Rolldown
 3. Output to `dist/` directory
+
+### Build and Preview
+
+To build and run a local preview of the production version:
+
+```bash
+bun run prod
+```
+
+This will build the project and start a local server to preview the production build.
+
+### Automated Setup and Build
+
+For a complete automated setup (installs bun, dependencies, builds, and previews), use the platform-specific start scripts:
+
+- **Mac/Linux**: `./start.sh`
+- **Windows PowerShell**: `.\start.ps1`
+- **Windows CMD**: `start.bat`
