@@ -16,6 +16,7 @@ function App() {
   const [dbStats, setDbStats] = useState<{ totalSNPs: number } | null>(null);
 
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
+  const [detectedFormat, setDetectedFormat] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
   const [matches, setMatches] = useState<MatchedSNP[] | null>(null);
   const [genosets, setGenosets] = useState<MatchedGenoset[] | null>(null);
@@ -95,6 +96,7 @@ function App() {
         );
 
         setParseResult(result);
+        setDetectedFormat(result.detectedFormat || null);
         setIsParsing(false);
 
         if (result.genotypes.length === 0) {
@@ -152,6 +154,7 @@ function App() {
 
   const handleReset = useCallback(() => {
     setParseResult(null);
+    setDetectedFormat(null);
     setMatches(null);
     setGenosets(null);
     setMatchError(null);
@@ -167,9 +170,7 @@ function App() {
       <div className="mx-auto max-w-7xl">
         <header className="mb-8 text-center">
           <h1 className="mb-2 text-4xl font-bold text-gray-900">🧬 SNP Browser</h1>
-          <p className="text-base text-gray-600">
-            Explore genetic variants from SNPedia and match with your 23andMe data
-          </p>
+          <p className="text-base text-gray-600">Explore genetic variants from SNPedia and match with your DNA data</p>
           {dbStats && !isDbLoading && (
             <p className="mt-1 text-sm text-gray-500">Database contains {dbStats.totalSNPs.toLocaleString()} SNPs</p>
           )}
@@ -313,10 +314,18 @@ function App() {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 {parseResult && (
-                  <p className="m-0 text-sm text-gray-600">
-                    Processed {parseResult.genotypes.length.toLocaleString()} SNPs from your file
-                    {parseResult.errors.length > 0 && ` (${parseResult.errors.length} errors)`}
-                  </p>
+                  <div className="space-y-1">
+                    <p className="m-0 text-sm text-gray-600">
+                      Processed {parseResult.genotypes.length.toLocaleString()} SNPs from your file
+                      {parseResult.errors.length > 0 && ` (${parseResult.errors.length} errors)`}
+                    </p>
+                    {detectedFormat && (
+                      <p className="m-0 text-xs text-gray-500">
+                        Detected format:{" "}
+                        <span className="font-medium capitalize">{detectedFormat.replace("-", " ")}</span>
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
               <button

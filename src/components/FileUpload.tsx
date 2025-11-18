@@ -1,10 +1,15 @@
 import { useState, useCallback, type DragEvent, type ChangeEvent } from "react";
 import { twMerge } from "tailwind-merge";
+import { getSupportedExtensions, getAllParsers } from "../parsers";
 
 interface FileUploadProps {
   onFileSelect: (file: File) => void;
   disabled?: boolean;
 }
+
+// Get supported file extensions and formats
+const SUPPORTED_EXTENSIONS = getSupportedExtensions().join(",");
+const SUPPORTED_FORMATS = getAllParsers();
 
 export function FileUpload({ onFileSelect, disabled = false }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -66,7 +71,7 @@ export function FileUpload({ onFileSelect, disabled = false }: FileUploadProps) 
       <input
         type="file"
         id="file-input"
-        accept=".txt,.csv"
+        accept={SUPPORTED_EXTENSIONS}
         onChange={handleFileInput}
         disabled={disabled}
         className="hidden"
@@ -74,10 +79,21 @@ export function FileUpload({ onFileSelect, disabled = false }: FileUploadProps) 
       <label htmlFor="file-input" className={twMerge("block", disabled ? "cursor-not-allowed" : "cursor-pointer")}>
         <div className="mb-4 text-5xl">📁</div>
         <div className="mb-2 text-lg font-bold text-gray-800">
-          {isDragging ? "Drop your file here" : "Drag & drop your 23andMe file"}
+          {isDragging ? "Drop your DNA file here" : "Drag & drop your DNA data file"}
         </div>
         <div className="text-sm text-gray-600">or click to browse</div>
-        <div className="mt-2 text-xs text-gray-500">Accepts .txt or .csv files from 23andMe</div>
+        <div className="mt-4 text-xs text-gray-500">
+          <div className="mb-2 font-semibold">Supported formats:</div>
+          <div className="space-y-1">
+            {SUPPORTED_FORMATS.map((parser) => (
+              <div key={parser.metadata.id}>
+                <span className="font-medium">{parser.metadata.name}</span> ({parser.metadata.fileExtensions.join(", ")}
+                )
+              </div>
+            ))}
+          </div>
+          <div className="mt-2 text-gray-400">Format will be auto-detected</div>
+        </div>
       </label>
     </div>
   );

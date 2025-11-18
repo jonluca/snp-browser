@@ -9,6 +9,7 @@ import type {
   GenosetRecord,
   MatchedGenoset,
 } from "../types/snp";
+import { parserRegistry } from "../parsers";
 
 /**
  * Worker state - holds the loaded database
@@ -220,107 +221,62 @@ async function matchSNPsInBatches(
 }
 
 /**
- * Parses a 23andMe genomic data file with progress reporting
+ * Parse file using appropriate parser based on format detection or specified parser ID
  */
-async function parse23andMeFileInWorker(
+async function parseFileWithDetection(
   fileContent: string,
   onProgress: (current: number, total: number) => void,
-): Promise<ParseResult> {
-  const lines = fileContent.split("\n");
-  const genotypes: UserGenotype[] = [];
-  const errors: string[] = [];
-  let skippedLines = 0;
-  const totalLines = lines.length;
+  parserId?: string,
+): Promise<ParseResult & { detectedFormat?: string }> {
+  let parser;
 
-  // Report initial progress
-  onProgress(0, totalLines);
+  // If parser ID is specified, use that parser
+  if (parserId) {
+    parser = parserRegistry.get(parserId);
+    if (!parser) {
+      throw new Error(
+        `Parser "${parserId}" not found. Available parsers: ${parserRegistry
+          .getAll()
+          .map((p) => p.metadata.id)
+          .join(", ")}`,
+      );
+    }
+  } else {
+    // Auto-detect format
+    const detection = parserRegistry.detectFormat(fileContent);
 
-  // Process lines in batches for better performance and progress reporting
-  const batchSize = 1000;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-
-    // Skip empty lines
-    if (!line) {
-      skippedLines++;
-      continue;
+    if (!detection.parser) {
+      const availableParsers = parserRegistry
+        .getAll()
+        .map((p) => p.metadata.name)
+        .join(", ");
+      throw new Error(
+        `Could not detect file format. Supported formats: ${availableParsers}. ` +
+          "Please ensure your file is from a supported DNA testing provider.",
+      );
     }
 
-    // Skip comment lines
-    if (line.startsWith("#")) {
-      skippedLines++;
-      continue;
-    }
+    parser = detection.parser;
 
-    // Parse data line
-    const parts = line.split(/\s+/); // Split by whitespace (tabs or spaces)
-
-    if (parts.length < 4) {
-      errors.push(`Line ${i + 1}: Invalid format - expected 4 columns, got ${parts.length}`);
-      skippedLines++;
-      continue;
-    }
-
-    const [rsid, chromosome, position, genotype] = parts;
-
-    // if it's 23andme, we need to swap all C's to G's and G's to C's
-    const genotypeValue = genotype.toLowerCase();
-    // if (is23andMe) {
-    //   genotypeValue = genotype
-    //     .split("")
-    //     .map((char) => {
-    //       if (char === "c") return "g";
-    //       if (char === "g") return "c";
-    //       return char;
-    //     })
-    //     .join("");
-    // }
-
-    genotypes.push({
-      rsid: rsid.toLowerCase(), // Normalize to lowercase for matching
-      chromosome,
-      position,
-      genotype: genotypeValue,
-    });
-
-    // Report progress every batch
-    if (i % batchSize === 0 || i === lines.length - 1) {
-      onProgress(i + 1, totalLines);
+    // Warn if detection confidence is low
+    if (!detection.confident && detection.candidates.length > 1) {
+      console.warn(
+        `Format detection confidence is low. Detected as ${parser.metadata.name} with ${Math.round(detection.candidates[0].validation.confidence * 100)}% confidence. ` +
+          `Other candidates: ${detection.candidates
+            .slice(1)
+            .map((c) => `${c.parser.metadata.name} (${Math.round(c.validation.confidence * 100)}%)`)
+            .join(", ")}`,
+      );
     }
   }
+
+  // Parse using detected or specified parser
+  const result = await parser.parse(fileContent, onProgress);
 
   return {
-    genotypes,
-    totalLines,
-    skippedLines,
-    errors,
+    ...result,
+    detectedFormat: parser.metadata.id,
   };
-}
-
-/**
- * Validates if a file appears to be a 23andMe format file
- */
-function validate23andMeFileInWorker(fileContent: string): { valid: boolean; reason?: string } {
-  const lines = fileContent.split("\n").slice(0, 100); // Check first 100 lines
-
-  // Should have comment lines
-  const hasComments = lines.some((line) => line.trim().startsWith("#"));
-  if (!hasComments) {
-    return { valid: false, reason: "File doesn't appear to have 23andMe format headers (no # comment lines)" };
-  }
-
-  // Should have data lines with rsid format
-  const hasRsidData = lines.some((line) => {
-    const trimmed = line.trim();
-    return !trimmed.startsWith("#") && trimmed.match(/^(rs|i)\d+/i);
-  });
-
-  if (!hasRsidData) {
-    return { valid: false, reason: "File doesn't contain valid SNP data (no rsid entries found)" };
-  }
-
-  return { valid: true };
 }
 
 /**
@@ -404,17 +360,54 @@ async function matchGenosets(
  */
 const workerApi = {
   /**
-   * Parses and validates a 23andMe genomic data file
+   * Parses a DNA file with automatic format detection or specified parser
+   *
+   * @param fileContent - The raw file content
+   * @param onProgress - Progress callback
+   * @param parserId - Optional parser ID (e.g., '23andme', 'ancestry'). If not specified, format is auto-detected.
    */
-  async parseFile(fileContent: string, onProgress: (current: number, total: number) => void): Promise<ParseResult> {
-    // Validate format first
-    const validation = validate23andMeFileInWorker(fileContent);
-    if (!validation.valid) {
-      throw new Error(validation.reason || "Invalid file format");
-    }
+  async parseFile(
+    fileContent: string,
+    onProgress: (current: number, total: number) => void,
+    parserId?: string,
+  ): Promise<ParseResult & { detectedFormat?: string }> {
+    return parseFileWithDetection(fileContent, onProgress, parserId);
+  },
 
-    // Parse file with progress reporting
-    return parse23andMeFileInWorker(fileContent, onProgress);
+  /**
+   * Get list of all available parsers
+   */
+  getAvailableParsers() {
+    return parserRegistry.getAll().map((p) => ({
+      id: p.metadata.id,
+      name: p.metadata.name,
+      description: p.metadata.description,
+      fileExtensions: p.metadata.fileExtensions,
+      providerUrl: p.metadata.providerUrl,
+    }));
+  },
+
+  /**
+   * Detect file format without parsing
+   */
+  detectFileFormat(fileContent: string) {
+    const detection = parserRegistry.detectFormat(fileContent);
+    return {
+      detectedParser: detection.parser
+        ? {
+            id: detection.parser.metadata.id,
+            name: detection.parser.metadata.name,
+            confidence: detection.candidates[0]?.validation.confidence || 0,
+          }
+        : null,
+      confident: detection.confident,
+      allCandidates: detection.candidates.map((c) => ({
+        id: c.parser.metadata.id,
+        name: c.parser.metadata.name,
+        confidence: c.validation.confidence,
+        reason: c.validation.reason,
+      })),
+    };
   },
 
   /**
