@@ -47,20 +47,67 @@ function extractMagnitude(content: string): number | undefined {
   return undefined;
 }
 
+type Orientation = "plus" | "minus" | "unknown";
+
+function parseOrientationFromContent(content: string): {
+  orientation: Orientation;
+  stabilizedOrientation: Orientation;
+} {
+  const orientationRegex = /\|Orientation=([^|\n}]+)/i;
+  const stabilizedOrientationRegex = /\|StabilizedOrientation=([^|\n}]+)/i;
+
+  const orientationMatch = content.match(orientationRegex);
+  const stabilizedMatch = content.match(stabilizedOrientationRegex);
+
+  const normalize = (val: string | undefined | null): Orientation => {
+    if (!val) return "unknown";
+    const v = val.trim().toLowerCase();
+    if (v.startsWith("plus") || v === "+") return "plus";
+    if (v.startsWith("minus") || v === "-") return "minus";
+    return "unknown";
+  };
+
+  return {
+    orientation: normalize(orientationMatch?.[1]),
+    stabilizedOrientation: normalize(stabilizedMatch?.[1]),
+  };
+}
+
+/**
+ * Complement a genotype string (A<->T, C<->G), leaving other characters as-is.
+ * Input is assumed lowercased.
+ */
+function complementGenotype(genotype: string): string {
+  const map: Record<string, string> = {
+    a: "t",
+    t: "a",
+    c: "g",
+    g: "c",
+  };
+
+  return genotype
+    .split("")
+    .map((ch) => map[ch] ?? ch)
+    .join("");
+}
 /**
  * Parse content fields to extract structured data
  */
 function parseContentData(rsid: string, snpContent: string, genotypeContent?: string): ParsedSNPData {
-  // Extract magnitude from genotype-specific content first, fall back to SNP content
   const magnitude = genotypeContent
     ? (extractMagnitude(genotypeContent) ?? extractMagnitude(snpContent))
     : extractMagnitude(snpContent);
+
+  const { orientation, stabilizedOrientation } = parseOrientationFromContent(snpContent);
 
   return {
     rsid,
     rawContent: snpContent,
     genotypeContent,
     magnitude,
+    // add these fields to ParsedSNPData if they’re not there yet
+    orientation,
+    stabilizedOrientation,
   };
 }
 
@@ -98,29 +145,46 @@ async function matchSNPsInBatches(
       while (stmt.step()) {
         const row = stmt.getAsObject();
         const snp_id = row.snp_id as string;
-        const rowGenotype = row.genotype as string;
-        // replace all non alphanumeric characters and convert to lowercase for matching
-        const genotype = rowGenotype
+
+        const rowGenotypeRaw = row.genotype as string;
+        // SNPedia genotype, normalized for comparison
+        const snpediaGenotype = rowGenotypeRaw
           .replace(/[^a-z0-9-]/gi, "")
           .toLowerCase()
           .trim();
 
-        // Find matching user genotype - match both rsid and genotype value if present
+        const snpContent = (row.snp_content as string) || "";
+        const genotypeContent = (row.genotype_content as string) || "";
+
+        // Determine orientation for this SNP
+        const { orientation, stabilizedOrientation } = parseOrientationFromContent(snpContent);
+        // Per SNPedia docs, StabilizedOrientation is what the genotype definitions use;
+        // fall back to Orientation if needed.
+        const effectiveOrientation: Orientation =
+          stabilizedOrientation !== "unknown" ? stabilizedOrientation : orientation;
+
+        // Find matching user genotype for this SNP, taking orientation into account
         const userGenotype = batch.find((g) => {
           const rsidMatch = g.rsid === snp_id;
-          // If genotype column exists and is not empty, also match genotype value
-          if (genotype && genotype) {
-            return rsidMatch && g.genotype === genotype;
+          if (!rsidMatch) return false;
+          if (g.genotype == "--") return false;
+
+          if (!snpediaGenotype) return rsidMatch;
+
+          // 23andMe genotypes are plus-strand. If SNPedia’s effective orientation is minus,
+          // flip the user genotype into minus to match SNPedia’s definitions.
+          let normalizedUserGenotype = (g.genotype || "").toLowerCase().trim();
+          if (effectiveOrientation === "minus") {
+            normalizedUserGenotype = complementGenotype(normalizedUserGenotype);
           }
-          return rsidMatch;
+
+          return normalizedUserGenotype === snpediaGenotype;
         });
 
         if (userGenotype) {
           const rsid = row.rsid as string;
-          const snpContent = (row.snp_content as string) || "";
-          const genotypeContent = (row.genotype_content as string) || "";
 
-          // Parse content to extract structured data
+          // Parse content (this will also re-parse orientation and make it available downstream)
           const parsedData = parseContentData(rsid, snpContent, genotypeContent);
 
           matches.push({
@@ -135,13 +199,13 @@ async function matchSNPsInBatches(
               content: genotypeContent,
               scraped_at: row.genotype_scraped_at as string | undefined,
               snp_id: snp_id,
-              genotype: genotype,
+              // keep this as the SNPedia genotype (its own orientation)
+              genotype: snpediaGenotype,
             },
             parsedData,
           });
         }
       }
-
       stmt.free();
     } catch (error) {
       console.error("Error querying batch:", error);
@@ -162,7 +226,6 @@ async function parse23andMeFileInWorker(
   fileContent: string,
   onProgress: (current: number, total: number) => void,
 ): Promise<ParseResult> {
-  const is23andMe = fileContent.slice(0, 1000).toLowerCase().includes("23andme");
   const lines = fileContent.split("\n");
   const genotypes: UserGenotype[] = [];
   const errors: string[] = [];
