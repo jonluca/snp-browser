@@ -48,21 +48,25 @@ The SNP database is hosted at https://static.snpbrowser.com/snp-2025113.db
 For the fastest setup, use the included start scripts that automatically install bun (if needed), install dependencies, and build/run the production version:
 
 **Mac/Linux:**
+
 ```bash
 ./start.sh
 ```
 
 **Windows (PowerShell - Recommended):**
+
 ```powershell
 .\start.ps1
 ```
 
 **Windows (Command Prompt):**
+
 ```cmd
 start.bat
 ```
 
 These scripts will:
+
 1. Check if bun is installed (and install it if needed)
 2. Run `bun install` to install dependencies
 3. Run `bun run prod` to build and preview the production version
