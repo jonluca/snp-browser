@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import { twMerge } from "tailwind-merge";
 import { Virtuoso } from "react-virtuoso";
 import type { MatchedSNP, MatchedGenoset } from "../types/snp";
+import { buildCsv, downloadCsvFile, type CsvColumn } from "../utils/csvExport";
 import { WikiContent } from "./WikiContent";
 import { GenosetDisplay } from "./GenosetDisplay";
 
@@ -12,6 +13,23 @@ interface ResultsDisplayProps {
   genosets: MatchedGenoset[];
 }
 
+const parsedValue = (value: unknown) => (value === null || value === undefined ? "" : String(value));
+
+const SNP_EXPORT_COLUMNS: CsvColumn<MatchedSNP>[] = [
+  { header: "RSID", value: (match) => match.rsid },
+  { header: "User Genotype", value: (match) => match.genotype },
+  { header: "Chromosome", value: (match) => match.chromosome },
+  { header: "Position", value: (match) => match.position },
+  { header: "SNPedia Genotype", value: (match) => match.genotypeData?.genotype },
+  { header: "Genotype ID", value: (match) => match.genotypeData?.id },
+  { header: "Magnitude", value: (match) => match.parsedData.magnitude },
+  { header: "Orientation", value: (match) => parsedValue(match.parsedData.orientation) },
+  { header: "Stabilized Orientation", value: (match) => parsedValue(match.parsedData.stabilizedOrientation) },
+  { header: "SNPedia URL", value: (match) => `https://www.snpedia.com/index.php/${match.rsid}` },
+  { header: "Genotype Content", value: (match) => match.genotypeData?.content },
+  { header: "SNP Content", value: (match) => match.snpData.content },
+];
+
 export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("snps");
   const [searchTerm, setSearchTerm] = useState("");
@@ -19,7 +37,7 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
   const [onlyWithGenotype, setOnlyWithGenotype] = useState(true); // Filter by default
 
   const filteredMatches = useMemo(() => {
-    let filtered = matches;
+    let filtered = [...matches];
 
     // Filter by genotype match (only show SNPs with matching genotype data)
     if (onlyWithGenotype) {
@@ -46,6 +64,10 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
       return magB - magA;
     });
   }, [matches, searchTerm, onlyWithGenotype]);
+
+  const handleExportSNPs = () => {
+    downloadCsvFile("snp-matches.csv", buildCsv(filteredMatches, SNP_EXPORT_COLUMNS));
+  };
 
   const itemContent = (index: number) => {
     const match = filteredMatches[index];
@@ -112,9 +134,22 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
       {viewMode === "snps" && (
         <div className="flex h-full flex-col gap-4">
           <div>
-            <h2 className="mb-2 text-xl font-semibold text-gray-900">
-              Found {matches.length.toLocaleString()} matching SNP{matches.length !== 1 ? "s" : ""}
-            </h2>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <h2 className="text-xl font-semibold text-gray-900">
+                Found {matches.length.toLocaleString()} matching SNP{matches.length !== 1 ? "s" : ""}
+              </h2>
+              <button
+                type="button"
+                onClick={handleExportSNPs}
+                disabled={filteredMatches.length === 0}
+                className={twMerge(
+                  "rounded bg-blue-500 px-3 py-2 text-sm font-medium text-white transition-colors",
+                  filteredMatches.length === 0 ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-blue-600",
+                )}
+              >
+                Export CSV
+              </button>
+            </div>
             <input
               type="text"
               placeholder="Search by rsid, genotype, or content..."

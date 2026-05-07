@@ -4,6 +4,7 @@ import { Virtuoso } from "react-virtuoso";
 import type { Remote } from "comlink";
 import type { SNPRecord } from "../types/snp";
 import type { SNPMatcherWorkerApi } from "../workers/snpMatcher.worker";
+import { buildCsv, downloadCsvFile, type CsvColumn } from "../utils/csvExport";
 import { WikiContent } from "./WikiContent";
 
 interface SNPBrowserProps {
@@ -46,6 +47,13 @@ const CLINICAL_SIGNIFICANCE_OPTIONS = [
   "Uncertain significance",
   "risk factor",
   "association",
+];
+
+const SNP_BROWSER_EXPORT_COLUMNS: CsvColumn<SNPRecord>[] = [
+  { header: "RSID", value: (snp) => snp.rsid },
+  { header: "SNPedia URL", value: (snp) => `https://www.snpedia.com/index.php/${snp.rsid}` },
+  { header: "Scraped At", value: (snp) => snp.scraped_at },
+  { header: "Content", value: (snp) => snp.content },
 ];
 
 export function SNPBrowser({ workerApi }: SNPBrowserProps) {
@@ -91,6 +99,10 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
     setGene("");
     setClinicalSignificance("");
     setDisease("");
+  };
+
+  const handleExportResults = () => {
+    downloadCsvFile("snp-browser-results.csv", buildCsv(results, SNP_BROWSER_EXPORT_COLUMNS));
   };
 
   const hasActiveFilters = searchTerm || chromosome || gene || clinicalSignificance || disease;
@@ -206,15 +218,30 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
         </div>
 
         {/* Results count */}
-        <div className="mt-3 text-sm text-gray-600">
-          {isSearching ? (
-            "Searching..."
-          ) : (
-            <>
-              Showing {results.length} of {total.toLocaleString()} SNP{total !== 1 ? "s" : ""}
-              {hasActiveFilters && " (filtered)"}
-            </>
-          )}
+        <div className="mt-3 flex items-center justify-between gap-3">
+          <div className="text-sm text-gray-600">
+            {isSearching ? (
+              "Searching..."
+            ) : (
+              <>
+                Showing {results.length} of {total.toLocaleString()} SNP{total !== 1 ? "s" : ""}
+                {hasActiveFilters && " (filtered)"}
+              </>
+            )}
+          </div>
+          <button
+            type="button"
+            onClick={handleExportResults}
+            disabled={isSearching || results.length === 0}
+            className={twMerge(
+              "rounded bg-blue-500 px-3 py-2 text-sm font-medium text-white transition-colors",
+              isSearching || results.length === 0
+                ? "cursor-not-allowed opacity-50"
+                : "cursor-pointer hover:bg-blue-600",
+            )}
+          >
+            Export CSV
+          </button>
         </div>
       </div>
 
