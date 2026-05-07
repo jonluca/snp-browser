@@ -11,6 +11,7 @@
  * - AncestryDNA: Tab-separated TXT files with separate allele columns
  * - MyHeritage: CSV files with RSID,CHROMOSOME,POSITION,RESULT format
  * - FamilyTreeDNA: CSV files with quoted values
+ * - VCF: Variant Call Format files with GT sample fields
  *
  * ## Adding New Parsers
  *
@@ -35,9 +36,10 @@ import parser23andMe from "./23andme";
 import parserAncestry from "./ancestry";
 import parserMyHeritage from "./myheritage";
 import parserFTDNA from "./ftdna";
+import parserVCF from "./vcf";
 
 // Re-export parsers
-export { parser23andMe, parserAncestry, parserMyHeritage, parserFTDNA };
+export { parser23andMe, parserAncestry, parserMyHeritage, parserFTDNA, parserVCF };
 
 // Auto-register all parsers
 import { parserRegistry } from "./registry";
@@ -47,6 +49,7 @@ parserRegistry.register(parser23andMe);
 parserRegistry.register(parserAncestry);
 parserRegistry.register(parserMyHeritage);
 parserRegistry.register(parserFTDNA);
+parserRegistry.register(parserVCF);
 
 /**
  * Get a list of all registered parsers

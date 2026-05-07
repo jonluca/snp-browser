@@ -23,6 +23,7 @@ The SNP database is hosted at https://static.snpbrowser.com/snp-2025113.db
   - AncestryDNA (TXT, CSV)
   - MyHeritage (CSV)
   - FamilyTreeDNA (CSV)
+  - VCF (Variant Call Format)
 - **Automatic Format Detection**: Smart detection system identifies file format with confidence scoring
 - **Client-side SQLite**: Process genomic data entirely in the browser using sql.js
 - **Virtualized Rendering**: Efficiently display large datasets with react-virtuoso
@@ -48,21 +49,25 @@ The SNP database is hosted at https://static.snpbrowser.com/snp-2025113.db
 For the fastest setup, use the included start scripts that automatically install bun (if needed), install dependencies, and build/run the production version:
 
 **Mac/Linux:**
+
 ```bash
 ./start.sh
 ```
 
 **Windows (PowerShell - Recommended):**
+
 ```powershell
 .\start.ps1
 ```
 
 **Windows (Command Prompt):**
+
 ```cmd
 start.bat
 ```
 
 These scripts will:
+
 1. Check if bun is installed (and install it if needed)
 2. Run `bun install` to install dependencies
 3. Run `bun run prod` to build and preview the production version
@@ -116,6 +121,13 @@ bun run prod
 - **Structure**: `RSID,"CHROMOSOME","POSITION","RESULT"`
 - **Example**: `rs4477212,"1","82154","AA"`
 
+### VCF
+
+- **Format**: Variant Call Format with `GT` genotype sample fields
+- **Extensions**: `.vcf`
+- **Structure**: `#CHROM POS ID REF ALT QUAL FILTER INFO FORMAT SAMPLE`
+- **Example**: `1    82154    rs4477212    A    G    .    PASS    .    GT    0/1`
+
 The application automatically detects the file format when you upload your DNA data.
 
 ## Architecture
@@ -136,8 +148,10 @@ src/
 │   │   └── index.ts       # AncestryDNA parser
 │   ├── myheritage/
 │   │   └── index.ts       # MyHeritage parser
-│   └── ftdna/
-│       └── index.ts       # FamilyTreeDNA parser
+│   ├── ftdna/
+│   │   └── index.ts       # FamilyTreeDNA parser
+│   └── vcf/
+│       └── index.ts       # VCF parser
 ```
 
 #### Adding a New Parser
