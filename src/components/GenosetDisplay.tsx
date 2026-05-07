@@ -2,18 +2,39 @@ import { useState, useMemo } from "react";
 import { twMerge } from "tailwind-merge";
 import { Virtuoso } from "react-virtuoso";
 import type { MatchedGenoset } from "../types/snp";
+import { buildCsv, downloadCsvFile, type CsvColumn } from "../utils/csvExport";
 import { WikiContent } from "./WikiContent";
 
 interface GenosetDisplayProps {
   genosets: MatchedGenoset[];
 }
 
+const GENOSET_EXPORT_COLUMNS: CsvColumn<MatchedGenoset>[] = [
+  { header: "Genoset ID", value: (genoset) => genoset.genoset.id },
+  { header: "Magnitude", value: (genoset) => genoset.parsedData.magnitude },
+  { header: "Matching Genotype Count", value: (genoset) => genoset.matchedGenotypes.length },
+  {
+    header: "Matching Genotypes",
+    value: (genoset) =>
+      genoset.matchedGenotypes
+        .map((match) => `${match.rsid.toUpperCase()}: ${match.genotype.toUpperCase()}`)
+        .join("; "),
+  },
+  {
+    header: "Genotype IDs",
+    value: (genoset) =>
+      genoset.matchedGenotypes.flatMap((match) => (match.genotypeData?.id ? [match.genotypeData.id] : [])).join("; "),
+  },
+  { header: "SNPedia URL", value: (genoset) => `https://www.snpedia.com/index.php/${genoset.genoset.id}` },
+  { header: "Genoset Content", value: (genoset) => genoset.genoset.content },
+];
+
 export function GenosetDisplay({ genosets }: GenosetDisplayProps) {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedGenoset, setSelectedGenoset] = useState<MatchedGenoset | null>(null);
 
   const filteredGenosets = useMemo(() => {
-    let filtered = genosets;
+    let filtered = [...genosets];
 
     // Apply search filter
     if (searchTerm) {
@@ -31,6 +52,10 @@ export function GenosetDisplay({ genosets }: GenosetDisplayProps) {
       return magB - magA;
     });
   }, [genosets, searchTerm]);
+
+  const handleExportGenosets = () => {
+    downloadCsvFile("snp-genosets.csv", buildCsv(filteredGenosets, GENOSET_EXPORT_COLUMNS));
+  };
 
   const itemContent = (index: number) => {
     const genoset = filteredGenosets[index];
@@ -67,9 +92,22 @@ export function GenosetDisplay({ genosets }: GenosetDisplayProps) {
   return (
     <div className="flex h-full flex-col gap-4">
       <div>
-        <h2 className="mb-2 text-xl font-semibold text-gray-900">
-          Found {genosets.length.toLocaleString()} matching genoset{genosets.length !== 1 ? "s" : ""}
-        </h2>
+        <div className="mb-2 flex items-center justify-between gap-3">
+          <h2 className="text-xl font-semibold text-gray-900">
+            Found {genosets.length.toLocaleString()} matching genoset{genosets.length !== 1 ? "s" : ""}
+          </h2>
+          <button
+            type="button"
+            onClick={handleExportGenosets}
+            disabled={filteredGenosets.length === 0}
+            className={twMerge(
+              "rounded bg-blue-500 px-3 py-2 text-sm font-medium text-white transition-colors",
+              filteredGenosets.length === 0 ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:bg-blue-600",
+            )}
+          >
+            Export CSV
+          </button>
+        </div>
         <p className="mb-2 text-sm text-gray-600">
           Genosets are collections of genotypes that together indicate a trait, condition, or characteristic.
         </p>
