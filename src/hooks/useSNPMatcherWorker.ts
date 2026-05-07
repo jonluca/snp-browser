@@ -20,6 +20,8 @@ export function useSNPMatcherWorker(): UseSNPMatcherWorkerResult {
   const [isReady, setIsReady] = useState(false);
 
   useEffect(() => {
+    let isMounted = true;
+
     try {
       // Create worker instance
       const worker = new SNPMatcherWorker();
@@ -34,14 +36,24 @@ export function useSNPMatcherWorker(): UseSNPMatcherWorkerResult {
         setError(new Error(`Worker error: ${errorEvent.message}`));
       };
 
-      setIsReady(true);
+      queueMicrotask(() => {
+        if (isMounted) {
+          setIsReady(true);
+        }
+      });
     } catch (err) {
       console.error("Failed to initialize worker:", err);
-      setError(err instanceof Error ? err : new Error("Failed to initialize worker"));
+      const initializationError = err instanceof Error ? err : new Error("Failed to initialize worker");
+      queueMicrotask(() => {
+        if (isMounted) {
+          setError(initializationError);
+        }
+      });
     }
 
     // Cleanup on unmount
     return () => {
+      isMounted = false;
       if (workerRef.current) {
         workerRef.current.terminate();
         workerRef.current = null;

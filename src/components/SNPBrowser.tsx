@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { twMerge } from "tailwind-merge";
 import { Virtuoso } from "react-virtuoso";
 import type { Remote } from "comlink";
@@ -67,31 +67,48 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
   const [selectedSNP, setSelectedSNP] = useState<SNPRecord | null>(null);
   const [isSearching, setIsSearching] = useState(false);
 
-  const performSearch = useCallback(async () => {
-    setIsSearching(true);
-    try {
-      const { results: newResults, total: newTotal } = await workerApi.searchSNPs({
-        searchTerm: searchTerm || undefined,
-        chromosome: chromosome || undefined,
-        gene: gene || undefined,
-        clinicalSignificance: clinicalSignificance || undefined,
-        disease: disease || undefined,
-        limit: 1000000, // Load all results for virtualization
-      });
-
-      setResults(newResults);
-      setTotal(newTotal);
-    } catch (error) {
-      console.error("Search error:", error);
-    } finally {
-      setIsSearching(false);
-    }
-  }, [workerApi, searchTerm, chromosome, gene, clinicalSignificance, disease]);
-
   // Perform search when filters change
   useEffect(() => {
-    performSearch();
-  }, [performSearch]);
+    let isCurrent = true;
+
+    async function performSearch() {
+      if (!isCurrent) return;
+
+      setIsSearching(true);
+      try {
+        const { results: newResults, total: newTotal } = await workerApi.searchSNPs({
+          searchTerm: searchTerm || undefined,
+          chromosome: chromosome || undefined,
+          gene: gene || undefined,
+          clinicalSignificance: clinicalSignificance || undefined,
+          disease: disease || undefined,
+          limit: 1000000, // Load all results for virtualization
+        });
+
+        if (!isCurrent) return;
+
+        setResults(newResults);
+        setTotal(newTotal);
+      } catch (error) {
+        if (isCurrent) {
+          console.error("Search error:", error);
+        }
+      } finally {
+        if (isCurrent) {
+          setIsSearching(false);
+        }
+      }
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void performSearch();
+    }, 0);
+
+    return () => {
+      isCurrent = false;
+      window.clearTimeout(timeoutId);
+    };
+  }, [workerApi, searchTerm, chromosome, gene, clinicalSignificance, disease]);
 
   const handleClearFilters = () => {
     setSearchTerm("");
