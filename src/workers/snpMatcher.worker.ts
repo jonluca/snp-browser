@@ -1,5 +1,6 @@
 import { expose } from "comlink";
 import initSqlJs, { type Database } from "sql.js";
+import sqlWasmUrl from "sql.js/dist/sql-wasm-browser.wasm?url";
 import type {
   UserGenotype,
   MatchedSNP,
@@ -420,7 +421,8 @@ const workerApi = {
       // Initialize SQL.js
       onProgress(10);
       const SQL = await initSqlJs({
-        locateFile: (file) => `https://sql.js.org/dist/${file}`,
+        // Keep the browser JS entry and its matching WASM binary from the same package version.
+        locateFile: (file) => (file.endsWith(".wasm") ? sqlWasmUrl : file),
       });
 
       onProgress(30);

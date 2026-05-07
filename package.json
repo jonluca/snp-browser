@@ -40,7 +40,7 @@
     "tailwindcss": "^4.2.4",
     "typescript": "~6.0.3",
     "typescript-eslint": "^8.59.2",
-    "vite": "npm:rolldown-vite@7.3.1"
+    "vite": "^8.0.11"
   },
   "prettier": {
     "printWidth": 120,
@@ -48,9 +48,5 @@
     "semi": true,
     "tabWidth": 2,
     "trailingComma": "all"
-  },
-  "overrides": {
-    "baseline-browser-mapping": "2.10.27",
-    "vite": "npm:rolldown-vite@7.3.1"
   }
 }
