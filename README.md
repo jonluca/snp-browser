@@ -23,6 +23,7 @@ The SNP database is hosted at https://static.snpbrowser.com/snp-2025113.db
   - AncestryDNA (TXT, CSV)
   - MyHeritage (CSV)
   - FamilyTreeDNA (CSV)
+  - Vitagene (TXT, CSV)
   - VCF/gVCF (Variant Call Format, including common whole-genome gVCF exports)
 - **Automatic Format Detection**: Smart detection system identifies file format with confidence scoring
 - **Client-side SQLite**: Process genomic data entirely in the browser using sql.js
@@ -120,6 +121,14 @@ bun run prod
 - **Extensions**: `.csv`
 - **Structure**: `RSID,"CHROMOSOME","POSITION","RESULT"`
 - **Example**: `rs4477212,"1","82154","AA"`
+
+### Vitagene
+
+- **Format**: CSV/TXT with RSID, chromosome, position, and result columns
+- **Extensions**: `.txt`, `.csv`
+- **Structure**: `RSID,CHROMOSOME,POSITION,RESULT`
+- **Example**: `rs4477212,1,82154,AA`
+- **Note**: Non-rs chip IDs are skipped before matching against SNPedia.
 
 ### VCF / gVCF
 
