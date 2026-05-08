@@ -17,32 +17,74 @@ import { extractSnpediaFields, type SnpediaSourceFields } from "../utils/snpedia
  * Worker state - holds the loaded database
  */
 let db: Database | null = null;
+let snpsTableColumns = new Set<string>();
 
 const DB_CACHE_NAME = "snp-browser-db-v1";
+const OPTIONAL_SNP_COLUMNS = ["gene", "gene_s", "clin_gene_name", "clin_sig", "clin_disease"] as const;
 
-/**
- * All columns to select from the snps table (actual schema)
- */
-const SNP_COLUMNS = `rsid, content, scraped_at, gene, gene_s, clin_gene_name, clin_sig, clin_disease`;
+type OptionalSnpColumn = (typeof OPTIONAL_SNP_COLUMNS)[number];
 
-/**
- * Columns to select from genotypes table joined with snps (actual schema)
- */
-const GENOTYPE_JOIN_COLUMNS = `
-  g.id as genotype_id,
-  g.content as genotype_content,
-  g.scraped_at as genotype_scraped_at,
-  g.snp_id,
-  g.genotype,
-  s.rsid,
-  s.content as snp_content,
-  s.scraped_at as snp_scraped_at,
-  s.gene as snp_gene,
-  s.gene_s as snp_gene_s,
-  s.clin_gene_name as snp_clin_gene_name,
-  s.clin_sig as snp_clin_sig,
-  s.clin_disease as snp_clin_disease
-`;
+function loadTableColumns(database: Database, tableName: "snps"): Set<string> {
+  const columns = new Set<string>();
+  const stmt = database.prepare(`PRAGMA table_info(${tableName})`);
+
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    if (typeof row.name === "string") {
+      columns.add(row.name);
+    }
+  }
+
+  stmt.free();
+  return columns;
+}
+
+function hasSnpColumn(column: string): boolean {
+  return snpsTableColumns.has(column);
+}
+
+function selectOptionalSnpColumn(column: OptionalSnpColumn): string {
+  return hasSnpColumn(column) ? column : `NULL as ${column}`;
+}
+
+function selectOptionalJoinedSnpColumn(column: OptionalSnpColumn, alias: string): string {
+  return hasSnpColumn(column) ? `s.${column} as ${alias}` : `NULL as ${alias}`;
+}
+
+function getSnpSelectColumns(): string {
+  return [
+    "rsid",
+    "content",
+    "scraped_at",
+    ...OPTIONAL_SNP_COLUMNS.map((column) => selectOptionalSnpColumn(column)),
+  ].join(", ");
+}
+
+function getGenotypeJoinColumns(): string {
+  return [
+    "g.id as genotype_id",
+    "g.content as genotype_content",
+    "g.scraped_at as genotype_scraped_at",
+    "g.snp_id",
+    "g.genotype",
+    "s.rsid",
+    "s.content as snp_content",
+    "s.scraped_at as snp_scraped_at",
+    selectOptionalJoinedSnpColumn("gene", "snp_gene"),
+    selectOptionalJoinedSnpColumn("gene_s", "snp_gene_s"),
+    selectOptionalJoinedSnpColumn("clin_gene_name", "snp_clin_gene_name"),
+    selectOptionalJoinedSnpColumn("clin_sig", "snp_clin_sig"),
+    selectOptionalJoinedSnpColumn("clin_disease", "snp_clin_disease"),
+  ].join(",\n  ");
+}
+
+function bindLikeCondition(conditions: string[], params: (string | number)[], columns: string[], value: string): void {
+  const existingColumns = columns.filter((column) => hasSnpColumn(column));
+  if (existingColumns.length === 0) return;
+
+  conditions.push(`(${existingColumns.map((column) => `${column} LIKE ?`).join(" OR ")})`);
+  params.push(...existingColumns.map(() => value));
+}
 
 type Orientation = "plus" | "minus" | "unknown";
 
@@ -224,7 +266,7 @@ async function matchSNPsInBatches(
     // Create parameterized query - join genotypes with snps on snp_id
     const placeholders = rsids.map(() => "?").join(",");
     const query = `
-      SELECT ${GENOTYPE_JOIN_COLUMNS}
+      SELECT ${getGenotypeJoinColumns()}
       FROM genotypes g
       INNER JOIN snps s ON g.snp_id = s.rsid
       WHERE lower(g.snp_id) IN (${placeholders})
@@ -576,10 +618,12 @@ const workerApi = {
 
       // Create database instance
       db = new SQL.Database(dbBuffer);
+      snpsTableColumns = loadTableColumns(db, "snps");
 
       onProgress(100);
     } catch (error) {
       db = null;
+      snpsTableColumns = new Set<string>();
       throw error;
     }
   },
@@ -653,35 +697,46 @@ const workerApi = {
     // General search term (searches rsid, gene, content, disease)
     if (filters.searchTerm && filters.searchTerm.trim()) {
       const term = `%${filters.searchTerm.trim()}%`;
-      conditions.push(
-        "(rsid LIKE ? OR gene LIKE ? OR gene_s LIKE ? OR content LIKE ? OR clin_disease LIKE ? OR clin_gene_name LIKE ?)",
+      bindLikeCondition(
+        conditions,
+        params,
+        ["rsid", "gene", "gene_s", "content", "clin_disease", "clin_gene_name"],
+        term,
       );
-      params.push(term, term, term, term, term, term);
     }
 
     // Chromosome filter
     if (filters.chromosome) {
-      conditions.push("chromosome = ?");
-      params.push(filters.chromosome);
+      if (hasSnpColumn("chromosome")) {
+        conditions.push("chromosome = ?");
+        params.push(filters.chromosome);
+      } else {
+        conditions.push("0 = 1");
+      }
     }
 
     // Gene filter
     if (filters.gene && filters.gene.trim()) {
       const geneTerm = `%${filters.gene.trim()}%`;
-      conditions.push("(gene LIKE ? OR gene_s LIKE ? OR clin_gene_name LIKE ?)");
-      params.push(geneTerm, geneTerm, geneTerm);
+      const geneColumns = ["gene", "gene_s", "clin_gene_name"].filter((column) => hasSnpColumn(column));
+      bindLikeCondition(conditions, params, geneColumns.length > 0 ? geneColumns : ["content"], geneTerm);
     }
 
     // Clinical significance filter
     if (filters.clinicalSignificance) {
-      conditions.push("clin_sig LIKE ?");
-      params.push(`%${filters.clinicalSignificance}%`);
+      const clinicalSignificanceTerm = `%${filters.clinicalSignificance}%`;
+      bindLikeCondition(
+        conditions,
+        params,
+        hasSnpColumn("clin_sig") ? ["clin_sig"] : ["content"],
+        clinicalSignificanceTerm,
+      );
     }
 
     // Disease filter
     if (filters.disease && filters.disease.trim()) {
-      conditions.push("clin_disease LIKE ?");
-      params.push(`%${filters.disease.trim()}%`);
+      const diseaseTerm = `%${filters.disease.trim()}%`;
+      bindLikeCondition(conditions, params, hasSnpColumn("clin_disease") ? ["clin_disease"] : ["content"], diseaseTerm);
     }
 
     const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
@@ -699,7 +754,7 @@ const workerApi = {
     // Get results with pagination
     const limit = filters.limit || 50;
     const offset = filters.offset || 0;
-    const query = `SELECT ${SNP_COLUMNS} FROM snps ${whereClause} LIMIT ? OFFSET ?`;
+    const query = `SELECT ${getSnpSelectColumns()} FROM snps ${whereClause} LIMIT ? OFFSET ?`;
 
     const results: SNPRecord[] = [];
     const stmt = db.prepare(query);
