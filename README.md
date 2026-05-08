@@ -23,7 +23,7 @@ The SNP database is hosted at https://static.snpbrowser.com/snp-2025113.db
   - AncestryDNA (TXT, CSV)
   - MyHeritage (CSV)
   - FamilyTreeDNA (CSV)
-  - VCF (Variant Call Format)
+  - VCF/gVCF (Variant Call Format, including common whole-genome gVCF exports)
 - **Automatic Format Detection**: Smart detection system identifies file format with confidence scoring
 - **Client-side SQLite**: Process genomic data entirely in the browser using sql.js
 - **Virtualized Rendering**: Efficiently display large datasets with react-virtuoso
@@ -121,12 +121,13 @@ bun run prod
 - **Structure**: `RSID,"CHROMOSOME","POSITION","RESULT"`
 - **Example**: `rs4477212,"1","82154","AA"`
 
-### VCF
+### VCF / gVCF
 
-- **Format**: Variant Call Format with `GT` genotype sample fields
-- **Extensions**: `.vcf`
+- **Format**: Variant Call Format or genomic VCF with `GT` genotype sample fields
+- **Extensions**: `.vcf`, `.gvcf`, `.g.vcf`, `.vcf.gz`, `.g.vcf.gz`
 - **Structure**: `#CHROM POS ID REF ALT QUAL FILTER INFO FORMAT SAMPLE`
 - **Example**: `1    82154    rs4477212    A    G    .    PASS    .    GT    0/1`
+- **Note**: gVCF reference blocks and indels are skipped; SNP records with rsIDs are matched against SNPedia.
 
 The application automatically detects the file format when you upload your DNA data.
 

@@ -12,6 +12,8 @@ interface GenosetDisplayProps {
 const GENOSET_EXPORT_COLUMNS: CsvColumn<MatchedGenoset>[] = [
   { header: "Genoset ID", value: (genoset) => genoset.genoset.id },
   { header: "Magnitude", value: (genoset) => genoset.parsedData.magnitude },
+  { header: "Repute", value: (genoset) => genoset.parsedData.repute },
+  { header: "Summary", value: (genoset) => genoset.parsedData.summary },
   { header: "Matching Genotype Count", value: (genoset) => genoset.matchedGenotypes.length },
   {
     header: "Matching Genotypes",
@@ -26,7 +28,6 @@ const GENOSET_EXPORT_COLUMNS: CsvColumn<MatchedGenoset>[] = [
       genoset.matchedGenotypes.flatMap((match) => (match.genotypeData?.id ? [match.genotypeData.id] : [])).join("; "),
   },
   { header: "SNPedia URL", value: (genoset) => `https://www.snpedia.com/index.php/${genoset.genoset.id}` },
-  { header: "Genoset Content", value: (genoset) => genoset.genoset.content },
 ];
 
 export function GenosetDisplay({ genosets }: GenosetDisplayProps) {

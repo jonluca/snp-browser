@@ -9,9 +9,28 @@ import { DB_URL } from "./constants.ts";
 
 type AppMode = "upload" | "browse";
 
+function isVcfLikeFile(file: File): boolean {
+  const lowerFilename = file.name.toLowerCase();
+  return (
+    lowerFilename.endsWith(".vcf") ||
+    lowerFilename.endsWith(".gvcf") ||
+    lowerFilename.endsWith(".g.vcf") ||
+    lowerFilename.endsWith(".vcf.gz") ||
+    lowerFilename.endsWith(".g.vcf.gz")
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
 function App() {
   const [mode, setMode] = useState<AppMode>("upload");
   const [isDbLoading, setIsDbLoading] = useState(true);
+  const [dbLoadProgress, setDbLoadProgress] = useState(0);
   const [dbError, setDbError] = useState<Error | null>(null);
   const [dbStats, setDbStats] = useState<{ totalSNPs: number } | null>(null);
 
@@ -27,9 +46,12 @@ function App() {
   // Refs for direct DOM manipulation of progress bar (shared across all operations)
   const progressBarRef = useRef<HTMLDivElement>(null);
   const progressTextRef = useRef<HTMLParagraphElement>(null);
+  const dbLoadProgressRef = useRef(0);
+  const dbLoadPromiseRef = useRef<Promise<void> | null>(null);
 
-  // Initialize persistent worker
+  // Use separate workers so uploads can be parsed while the database worker is loading SQLite.
   const { api: workerApi, isReady: isWorkerReady, error: workerError } = useSNPMatcherWorker();
+  const { api: parserWorkerApi, isReady: isParserWorkerReady, error: parserWorkerError } = useSNPMatcherWorker();
 
   // Load database when worker is ready
   useEffect(() => {
@@ -46,6 +68,11 @@ function App() {
         await workerApi.loadDatabase(
           DB_URL,
           proxy((progress: number) => {
+            const roundedProgress = Math.round(progress);
+            if (dbLoadProgressRef.current !== roundedProgress) {
+              dbLoadProgressRef.current = roundedProgress;
+              setDbLoadProgress(roundedProgress);
+            }
             if (progressBarRef.current) {
               progressBarRef.current.style.width = `${progress}%`;
             }
@@ -59,52 +86,76 @@ function App() {
         const stats = await workerApi.getDatabaseStats();
         setDbStats(stats);
 
+        setDbLoadProgress(100);
         setIsDbLoading(false);
       } catch (err) {
         console.error("Error loading database:", err);
-        setDbError(err instanceof Error ? err : new Error("Failed to load database"));
+        const databaseError = err instanceof Error ? err : new Error("Failed to load database");
+        setDbError(databaseError);
         setIsDbLoading(false);
+        throw databaseError;
       }
     }
 
-    loadDB();
+    const loadPromise = loadDB();
+    dbLoadPromiseRef.current = loadPromise;
+    void loadPromise.catch(() => undefined);
   }, [isWorkerReady, workerApi]);
 
   const handleFileSelect = useCallback(
     async (file: File) => {
-      if (!workerApi) return;
+      if (!workerApi || !parserWorkerApi) return;
 
       try {
-        // Read file
-        const content = await file.text();
-
         // Parse file in worker thread with progress reporting
         setIsParsing(true);
         setMatchError(null);
 
-        const result = await workerApi.parseFile(
-          content,
-          proxy((current: number, total: number) => {
-            const progress = total > 0 ? (current / total) * 100 : 0;
-            if (progressBarRef.current) {
-              progressBarRef.current.style.width = `${progress}%`;
-            }
-            if (progressTextRef.current) {
-              progressTextRef.current.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} lines processed`;
-            }
-          }),
-        );
+        const parseAsStream = isVcfLikeFile(file);
+        const result = parseAsStream
+          ? await parserWorkerApi.parseFileBlob(
+              file,
+              proxy((current: number, total: number) => {
+                const progress = total > 0 ? (current / total) * 100 : 0;
+                if (progressBarRef.current) {
+                  progressBarRef.current.style.width = `${progress}%`;
+                }
+                if (progressTextRef.current) {
+                  progressTextRef.current.textContent = `${formatBytes(current)} / ${formatBytes(total)} read`;
+                }
+              }),
+            )
+          : await parserWorkerApi.parseFile(
+              await file.text(),
+              proxy((current: number, total: number) => {
+                const progress = total > 0 ? (current / total) * 100 : 0;
+                if (progressBarRef.current) {
+                  progressBarRef.current.style.width = `${progress}%`;
+                }
+                if (progressTextRef.current) {
+                  progressTextRef.current.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} lines processed`;
+                }
+              }),
+            );
 
         setParseResult(result);
         setDetectedFormat(result.detectedFormat || null);
         setIsParsing(false);
 
         if (result.genotypes.length === 0) {
-          throw new Error("No valid SNP data found in file");
+          throw new Error(
+            result.detectedFormat === "vcf"
+              ? "No rsID SNP genotype records were found in this VCF/gVCF. Reference blocks and indels are skipped because SNP Browser can only match SNP records with rsIDs against SNPedia."
+              : "No valid SNP data found in file",
+          );
         }
 
         // Match SNPs using worker
         setIsMatching(true);
+
+        if (dbLoadPromiseRef.current) {
+          await dbLoadPromiseRef.current;
+        }
 
         const matchedSNPs = await workerApi.matchSNPs(
           result.genotypes,
@@ -149,7 +200,7 @@ function App() {
         alert(err instanceof Error ? err.message : "Unknown error");
       }
     },
-    [workerApi],
+    [parserWorkerApi, workerApi],
   );
 
   const handleReset = useCallback(() => {
@@ -163,7 +214,12 @@ function App() {
 
   // Determine app state
   const hasResults = matches && matches.length >= 0 && genosets !== null;
-  const hasError = dbError || matchError || workerError;
+  const hasError = dbError || matchError || workerError || parserWorkerError;
+  const isDatabaseReady = Boolean(dbStats) && !isDbLoading && !dbError;
+  const isProcessing = isParsing || isMatching || isMatchingGenosets;
+  const isWaitingForDatabase = isMatching && !isDatabaseReady;
+  const canUpload =
+    Boolean(parserWorkerApi) && Boolean(workerApi) && isParserWorkerReady && isWorkerReady && !isProcessing;
 
   return (
     <div className="min-h-screen bg-gray-50 p-5">
@@ -171,18 +227,24 @@ function App() {
         <header className="mb-8 text-center">
           <h1 className="mb-2 text-4xl font-bold text-gray-900">🧬 SNP Browser</h1>
           <p className="text-base text-gray-600">Explore genetic variants from SNPedia and match with your DNA data</p>
-          {dbStats && !isDbLoading && (
+          {isDatabaseReady && dbStats && (
             <p className="mt-1 text-sm text-gray-500">Database contains {dbStats.totalSNPs.toLocaleString()} SNPs</p>
+          )}
+          {isDbLoading && !dbError && (
+            <p className="mt-1 text-sm text-gray-500">Loading database in the background: {dbLoadProgress}% complete</p>
           )}
 
           {/* Mode toggle */}
-          {!isDbLoading && !hasError && !hasResults && (
+          {!hasError && !hasResults && !isProcessing && (
             <div className="mt-4 inline-flex rounded-lg border gap-1 border-gray-300 bg-white p-1 shadow-sm">
               <button
                 onClick={() => setMode("browse")}
+                disabled={!isDatabaseReady}
+                title={isDatabaseReady ? undefined : "Database is still loading"}
                 className={twMerge(
                   "rounded-md px-4 py-2 text-sm font-medium cursor-pointer transition-colors",
                   mode === "browse" ? "bg-blue-500 text-white" : "text-gray-700 hover:bg-gray-100",
+                  !isDatabaseReady && "cursor-not-allowed opacity-50 hover:bg-transparent",
                 )}
               >
                 Browse Database
@@ -200,32 +262,17 @@ function App() {
           )}
         </header>
 
-        {/* Loading database */}
-        {isDbLoading && (
-          <div className="py-10 text-center">
-            <div className="mb-4 text-5xl">⏳</div>
-            <h2 className="mb-4 text-2xl font-semibold text-gray-800">Loading SNP Database...</h2>
-            <div className="mx-auto mb-4 h-5 w-full max-w-md overflow-hidden rounded-full bg-gray-200">
-              <div
-                ref={progressBarRef}
-                className="h-full bg-blue-500 transition-all duration-300"
-                style={{ width: "0%" }}
-              />
-            </div>
-            <p ref={progressTextRef} className="text-gray-600">
-              0% complete
-            </p>
-            <p className="mt-2 text-xs text-gray-500">Loading 155MB database (~30-60 seconds)</p>
-          </div>
-        )}
-
         {/* Database error */}
-        {hasError && !isDbLoading && (
+        {hasError && (
           <div className="rounded-lg border border-red-200 bg-red-50 p-10 text-center">
             <div className="mb-4 text-5xl">⚠️</div>
             <h2 className="mb-4 text-2xl font-semibold text-gray-800">Error</h2>
             <p className="text-red-600">
-              {dbError?.message || matchError?.message || workerError?.message || "An unknown error occurred"}
+              {dbError?.message ||
+                matchError?.message ||
+                workerError?.message ||
+                parserWorkerError?.message ||
+                "An unknown error occurred"}
             </p>
             <button
               onClick={() => window.location.reload()}
@@ -237,10 +284,37 @@ function App() {
         )}
 
         {/* Main content area */}
-        {!isDbLoading && !hasError && !hasResults && !isParsing && !isMatching && !isMatchingGenosets && (
+        {!hasError && !hasResults && !isParsing && !isMatching && !isMatchingGenosets && (
           <>
-            {mode === "browse" && workerApi && <SNPBrowser workerApi={workerApi} />}
-            {mode === "upload" && <FileUpload onFileSelect={handleFileSelect} />}
+            {mode === "browse" &&
+              (isDatabaseReady && workerApi ? (
+                <SNPBrowser workerApi={workerApi} />
+              ) : (
+                <div className="rounded-lg border border-gray-200 bg-white p-10 text-center">
+                  <div className="mb-4 text-5xl">⏳</div>
+                  <h2 className="mb-4 text-2xl font-semibold text-gray-800">Preparing SNP Database...</h2>
+                  <div className="mx-auto mb-4 h-5 w-full max-w-md overflow-hidden rounded-full bg-gray-200">
+                    <div
+                      ref={progressBarRef}
+                      className="h-full bg-blue-500 transition-all duration-300"
+                      style={{ width: `${dbLoadProgress}%` }}
+                    />
+                  </div>
+                  <p ref={progressTextRef} className="text-gray-600">
+                    {dbLoadProgress}% complete
+                  </p>
+                </div>
+              ))}
+            {mode === "upload" && (
+              <>
+                <FileUpload onFileSelect={handleFileSelect} disabled={!canUpload} />
+                {isDbLoading && (
+                  <p className="mt-4 text-center text-sm text-gray-500">
+                    Database is loading in the background. Matching starts as soon as it is ready.
+                  </p>
+                )}
+              </>
+            )}
           </>
         )}
 
@@ -266,7 +340,9 @@ function App() {
         {isMatching && (
           <div className="py-10 text-center">
             <div className="mb-4 text-5xl">🔍</div>
-            <h2 className="mb-4 text-2xl font-semibold text-gray-800">Matching SNPs with database...</h2>
+            <h2 className="mb-4 text-2xl font-semibold text-gray-800">
+              {isWaitingForDatabase ? "Preparing SNP database..." : "Matching SNPs with database..."}
+            </h2>
             {parseResult && (
               <p className="mb-4 text-gray-600">
                 Found {parseResult.genotypes.length.toLocaleString()} SNPs in your file
@@ -276,11 +352,11 @@ function App() {
               <div
                 ref={progressBarRef}
                 className="h-full bg-green-500 transition-all duration-300"
-                style={{ width: "0%" }}
+                style={{ width: isWaitingForDatabase ? `${dbLoadProgress}%` : "0%" }}
               />
             </div>
             <p ref={progressTextRef} className="text-gray-600">
-              0 / 0 SNPs processed
+              {isWaitingForDatabase ? `${dbLoadProgress}% complete` : "0 / 0 SNPs processed"}
             </p>
           </div>
         )}

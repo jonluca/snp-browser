@@ -3,6 +3,11 @@ export interface SNPRecord {
   rsid: string;
   content: string;
   scraped_at?: string;
+  gene?: string;
+  gene_s?: string;
+  clin_gene_name?: string;
+  clin_sig?: string;
+  clin_disease?: string;
 }
 
 // Raw database record from genotypes table
@@ -34,7 +39,10 @@ export interface ParsedSNPData {
   rsid: string;
   rawContent: string;
   genotypeContent?: string; // Content specific to the user's genotype
+  geneSymbol?: string;
   magnitude?: number;
+  repute?: string;
+  summary?: string;
   // Any other fields we extract from content
   [key: string]: unknown;
 }
@@ -54,6 +62,8 @@ export interface MatchedGenoset {
     id: string;
     rawContent: string;
     magnitude?: number;
+    repute?: string;
+    summary?: string;
     [key: string]: unknown;
   };
 }

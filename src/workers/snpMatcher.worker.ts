@@ -10,17 +10,20 @@ import type {
   GenosetRecord,
   MatchedGenoset,
 } from "../types/snp";
-import { parserRegistry } from "../parsers";
+import { parserRegistry, parserVCF } from "../parsers";
+import { extractSnpediaFields, type SnpediaSourceFields } from "../utils/snpediaFields";
 
 /**
  * Worker state - holds the loaded database
  */
 let db: Database | null = null;
 
+const DB_CACHE_NAME = "snp-browser-db-v1";
+
 /**
  * All columns to select from the snps table (actual schema)
  */
-const SNP_COLUMNS = `rsid, content, scraped_at`;
+const SNP_COLUMNS = `rsid, content, scraped_at, gene, gene_s, clin_gene_name, clin_sig, clin_disease`;
 
 /**
  * Columns to select from genotypes table joined with snps (actual schema)
@@ -33,21 +36,13 @@ const GENOTYPE_JOIN_COLUMNS = `
   g.genotype,
   s.rsid,
   s.content as snp_content,
-  s.scraped_at as snp_scraped_at
+  s.scraped_at as snp_scraped_at,
+  s.gene as snp_gene,
+  s.gene_s as snp_gene_s,
+  s.clin_gene_name as snp_clin_gene_name,
+  s.clin_sig as snp_clin_sig,
+  s.clin_disease as snp_clin_disease
 `;
-
-/**
- * Extract magnitude from SNPedia content
- */
-function extractMagnitude(content: string): number | undefined {
-  // Look for magnitude patterns like "magnitude=3" or "Magnitude: 3"
-  const magnitudeMatch = content.match(/magnitude[:\s=]+(\d+(?:\.\d+)?)/i);
-  if (magnitudeMatch && magnitudeMatch[1]) {
-    const mag = parseFloat(magnitudeMatch[1]);
-    return isNaN(mag) ? undefined : mag;
-  }
-  return undefined;
-}
 
 type Orientation = "plus" | "minus" | "unknown";
 
@@ -95,22 +90,117 @@ function complementGenotype(genotype: string): string {
 /**
  * Parse content fields to extract structured data
  */
-function parseContentData(rsid: string, snpContent: string, genotypeContent?: string): ParsedSNPData {
-  const magnitude = genotypeContent
-    ? (extractMagnitude(genotypeContent) ?? extractMagnitude(snpContent))
-    : extractMagnitude(snpContent);
-
+function parseContentData(
+  rsid: string,
+  snpContent: string,
+  genotypeContent?: string,
+  snpFields: SnpediaSourceFields = {},
+): ParsedSNPData {
+  const snpSnpediaFields = extractSnpediaFields(snpContent, snpFields);
+  const genotypeSnpediaFields = genotypeContent ? extractSnpediaFields(genotypeContent) : {};
   const { orientation, stabilizedOrientation } = parseOrientationFromContent(snpContent);
 
   return {
     rsid,
     rawContent: snpContent,
     genotypeContent,
-    magnitude,
-    // add these fields to ParsedSNPData if they’re not there yet
+    geneSymbol: snpSnpediaFields.geneSymbol ?? genotypeSnpediaFields.geneSymbol,
+    magnitude: genotypeSnpediaFields.magnitude ?? snpSnpediaFields.magnitude,
+    repute: genotypeSnpediaFields.repute ?? snpSnpediaFields.repute,
+    summary: genotypeSnpediaFields.summary ?? snpSnpediaFields.summary,
     orientation,
     stabilizedOrientation,
   };
+}
+
+async function readCachedDatabase(dbPath: string): Promise<Uint8Array | null> {
+  if (!("caches" in globalThis)) {
+    return null;
+  }
+
+  try {
+    const cache = await caches.open(DB_CACHE_NAME);
+    const cachedResponse = await cache.match(dbPath);
+    if (!cachedResponse?.ok) {
+      return null;
+    }
+
+    return new Uint8Array(await cachedResponse.arrayBuffer());
+  } catch (error) {
+    console.warn("Unable to read cached database:", error);
+    return null;
+  }
+}
+
+async function writeDatabaseCache(dbPath: string, dbBuffer: Uint8Array): Promise<void> {
+  if (!("caches" in globalThis)) {
+    return;
+  }
+
+  const cacheBuffer = dbBuffer.buffer.slice(
+    dbBuffer.byteOffset,
+    dbBuffer.byteOffset + dbBuffer.byteLength,
+  ) as ArrayBuffer;
+
+  try {
+    const cache = await caches.open(DB_CACHE_NAME);
+    await cache.put(dbPath, new Response(cacheBuffer, { headers: { "content-type": "application/vnd.sqlite3" } }));
+  } catch (error) {
+    console.warn("Unable to cache database:", error);
+  }
+}
+
+async function fetchDatabase(dbPath: string, onProgress: (progress: number) => void): Promise<Uint8Array> {
+  const cachedDatabase = await readCachedDatabase(dbPath);
+  if (cachedDatabase) {
+    onProgress(85);
+    return cachedDatabase;
+  }
+
+  const response = await fetch(dbPath, {
+    credentials: "omit",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load database: ${response.statusText}`);
+  }
+
+  const contentLength = response.headers.get("content-length");
+  const total = contentLength ? parseInt(contentLength, 10) : 0;
+
+  const reader = response.body?.getReader();
+  if (!reader) {
+    throw new Error("Response body is not readable");
+  }
+
+  const chunks: Uint8Array[] = [];
+  let receivedLength = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    chunks.push(value);
+    receivedLength += value.length;
+
+    if (total > 0) {
+      // Progress from 30% to 80% during download.
+      const downloadProgress = 30 + (receivedLength / total) * 50;
+      onProgress(downloadProgress);
+    }
+  }
+
+  onProgress(85);
+
+  const dbBuffer = new Uint8Array(receivedLength);
+  let position = 0;
+  for (const chunk of chunks) {
+    dbBuffer.set(chunk, position);
+    position += chunk.length;
+  }
+
+  void writeDatabaseCache(dbPath, dbBuffer);
+
+  return dbBuffer;
 }
 
 /**
@@ -187,7 +277,14 @@ async function matchSNPsInBatches(
           const rsid = row.rsid as string;
 
           // Parse content (this will also re-parse orientation and make it available downstream)
-          const parsedData = parseContentData(rsid, snpContent, genotypeContent);
+          const snpFields = {
+            gene: row.snp_gene,
+            gene_s: row.snp_gene_s,
+            clin_gene_name: row.snp_clin_gene_name,
+            clin_sig: row.snp_clin_sig,
+            clin_disease: row.snp_clin_disease,
+          };
+          const parsedData = parseContentData(rsid, snpContent, genotypeContent, snpFields);
 
           matches.push({
             ...userGenotype,
@@ -195,6 +292,11 @@ async function matchSNPsInBatches(
               rsid,
               content: snpContent,
               scraped_at: row.snp_scraped_at as string | undefined,
+              gene: row.snp_gene as string | undefined,
+              gene_s: row.snp_gene_s as string | undefined,
+              clin_gene_name: row.snp_clin_gene_name as string | undefined,
+              clin_sig: row.snp_clin_sig as string | undefined,
+              clin_disease: row.snp_clin_disease as string | undefined,
             },
             genotypeData: {
               id: row.genotype_id as string,
@@ -280,6 +382,33 @@ async function parseFileWithDetection(
   };
 }
 
+function isVcfLikeFilename(filename: string): boolean {
+  const lowerFilename = filename.toLowerCase();
+  return (
+    lowerFilename.endsWith(".vcf") ||
+    lowerFilename.endsWith(".gvcf") ||
+    lowerFilename.endsWith(".g.vcf") ||
+    lowerFilename.endsWith(".vcf.gz") ||
+    lowerFilename.endsWith(".g.vcf.gz")
+  );
+}
+
+async function parseFileBlobWithDetection(
+  file: File,
+  onProgress: (current: number, total: number) => void,
+  parserId?: string,
+): Promise<ParseResult & { detectedFormat?: string }> {
+  if (parserId === parserVCF.metadata.id || (!parserId && isVcfLikeFilename(file.name))) {
+    const result = await parserVCF.parseBlob(file, onProgress);
+    return {
+      ...result,
+      detectedFormat: parserVCF.metadata.id,
+    };
+  }
+
+  return parseFileWithDetection(await file.text(), onProgress, parserId);
+}
+
 /**
  * Matches genosets based on matched SNPs
  * A genoset matches if its content references any of the matched genotype IDs
@@ -331,7 +460,7 @@ async function matchGenosets(
 
       // Only include genosets that have at least one matching genotype
       if (matchingGenotypes.length > 0) {
-        const magnitude = extractMagnitude(genoset.content);
+        const snpediaFields = extractSnpediaFields(genoset.content);
 
         matchedGenosets.push({
           genoset,
@@ -339,7 +468,9 @@ async function matchGenosets(
           parsedData: {
             id: genoset.id,
             rawContent: genoset.content,
-            magnitude,
+            magnitude: snpediaFields.magnitude,
+            repute: snpediaFields.repute,
+            summary: snpediaFields.summary,
           },
         });
       }
@@ -373,6 +504,18 @@ const workerApi = {
     parserId?: string,
   ): Promise<ParseResult & { detectedFormat?: string }> {
     return parseFileWithDetection(fileContent, onProgress, parserId);
+  },
+
+  /**
+   * Parses a DNA file Blob. VCF/gVCF files are streamed in the worker so large files
+   * do not need to be read into one main-thread string before parsing.
+   */
+  async parseFileBlob(
+    file: File,
+    onProgress: (current: number, total: number) => void,
+    parserId?: string,
+  ): Promise<ParseResult & { detectedFormat?: string }> {
+    return parseFileBlobWithDetection(file, onProgress, parserId);
   },
 
   /**
@@ -427,48 +570,7 @@ const workerApi = {
 
       onProgress(30);
 
-      // Fetch the database file with progress tracking
-      const response = await fetch(dbPath, {
-        credentials: "omit",
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to load database: ${response.statusText}`);
-      }
-
-      const contentLength = response.headers.get("content-length");
-      const total = contentLength ? parseInt(contentLength, 10) : 0;
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("Response body is not readable");
-      }
-
-      const chunks: Uint8Array[] = [];
-      let receivedLength = 0;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        chunks.push(value);
-        receivedLength += value.length;
-
-        if (total > 0) {
-          // Progress from 30% to 80% during download
-          const downloadProgress = 30 + (receivedLength / total) * 50;
-          onProgress(downloadProgress);
-        }
-      }
-
-      onProgress(85);
-
-      // Combine chunks into single Uint8Array
-      const dbBuffer = new Uint8Array(receivedLength);
-      let position = 0;
-      for (const chunk of chunks) {
-        dbBuffer.set(chunk, position);
-        position += chunk.length;
-      }
+      const dbBuffer = await fetchDatabase(dbPath, onProgress);
 
       onProgress(90);
 

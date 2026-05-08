@@ -1,14 +1,27 @@
-import { useState, useEffect } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { twMerge } from "tailwind-merge";
 import { Virtuoso } from "react-virtuoso";
 import type { Remote } from "comlink";
 import type { SNPRecord } from "../types/snp";
 import type { SNPMatcherWorkerApi } from "../workers/snpMatcher.worker";
 import { buildCsv, downloadCsvFile, type CsvColumn } from "../utils/csvExport";
+import { extractSnpediaFields } from "../utils/snpediaFields";
 import { WikiContent } from "./WikiContent";
 
 interface SNPBrowserProps {
   workerApi: Remote<SNPMatcherWorkerApi>;
+}
+
+interface SNPBrowserExportRow {
+  rsid: string;
+  geneSymbol?: string;
+  magnitude?: number;
+  repute?: string;
+  summary?: string;
+  clinicalSignificance?: string;
+  disease?: string;
+  snpediaUrl: string;
+  scrapedAt?: string;
 }
 
 const CHROMOSOMES = [
@@ -49,12 +62,34 @@ const CLINICAL_SIGNIFICANCE_OPTIONS = [
   "association",
 ];
 
-const SNP_BROWSER_EXPORT_COLUMNS: CsvColumn<SNPRecord>[] = [
+const SNP_BROWSER_EXPORT_COLUMNS: CsvColumn<SNPBrowserExportRow>[] = [
   { header: "RSID", value: (snp) => snp.rsid },
-  { header: "SNPedia URL", value: (snp) => `https://www.snpedia.com/index.php/${snp.rsid}` },
-  { header: "Scraped At", value: (snp) => snp.scraped_at },
-  { header: "Content", value: (snp) => snp.content },
+  { header: "Gene Symbol", value: (snp) => snp.geneSymbol },
+  { header: "Magnitude", value: (snp) => snp.magnitude },
+  { header: "Repute", value: (snp) => snp.repute },
+  { header: "Summary", value: (snp) => snp.summary },
+  { header: "Clinical Significance", value: (snp) => snp.clinicalSignificance },
+  { header: "Disease", value: (snp) => snp.disease },
+  { header: "SNPedia URL", value: (snp) => snp.snpediaUrl },
+  { header: "Scraped At", value: (snp) => snp.scrapedAt },
 ];
+
+const PAGE_SIZE = 100;
+
+function toExportRow(snp: SNPRecord): SNPBrowserExportRow {
+  const fields = extractSnpediaFields(snp.content, snp);
+  return {
+    rsid: snp.rsid,
+    geneSymbol: fields.geneSymbol,
+    magnitude: fields.magnitude,
+    repute: fields.repute,
+    summary: fields.summary,
+    clinicalSignificance: fields.clinicalSignificance,
+    disease: fields.disease,
+    snpediaUrl: `https://www.snpedia.com/index.php/${snp.rsid}`,
+    scrapedAt: snp.scraped_at,
+  };
+}
 
 export function SNPBrowser({ workerApi }: SNPBrowserProps) {
   const [searchTerm, setSearchTerm] = useState("");
@@ -66,6 +101,8 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
   const [total, setTotal] = useState(0);
   const [selectedSNP, setSelectedSNP] = useState<SNPRecord | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
 
   // Perform search when filters change
   useEffect(() => {
@@ -82,13 +119,15 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
           gene: gene || undefined,
           clinicalSignificance: clinicalSignificance || undefined,
           disease: disease || undefined,
-          limit: 1000000, // Load all results for virtualization
+          limit: PAGE_SIZE,
+          offset: 0,
         });
 
         if (!isCurrent) return;
 
         setResults(newResults);
         setTotal(newTotal);
+        setSelectedSNP(null);
       } catch (error) {
         if (isCurrent) {
           console.error("Search error:", error);
@@ -110,6 +149,41 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
     };
   }, [workerApi, searchTerm, chromosome, gene, clinicalSignificance, disease]);
 
+  const loadMoreResults = useCallback(async () => {
+    if (isSearching || isLoadingMore || results.length >= total) return;
+
+    setIsLoadingMore(true);
+    try {
+      const { results: newResults, total: newTotal } = await workerApi.searchSNPs({
+        searchTerm: searchTerm || undefined,
+        chromosome: chromosome || undefined,
+        gene: gene || undefined,
+        clinicalSignificance: clinicalSignificance || undefined,
+        disease: disease || undefined,
+        limit: PAGE_SIZE,
+        offset: results.length,
+      });
+
+      setResults((currentResults) => [...currentResults, ...newResults]);
+      setTotal(newTotal);
+    } catch (error) {
+      console.error("Search error:", error);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [
+    chromosome,
+    clinicalSignificance,
+    disease,
+    gene,
+    isLoadingMore,
+    isSearching,
+    results.length,
+    searchTerm,
+    total,
+    workerApi,
+  ]);
+
   const handleClearFilters = () => {
     setSearchTerm("");
     setChromosome("");
@@ -118,11 +192,30 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
     setDisease("");
   };
 
-  const handleExportResults = () => {
-    downloadCsvFile("snp-browser-results.csv", buildCsv(results, SNP_BROWSER_EXPORT_COLUMNS));
+  const handleExportResults = async () => {
+    if (total === 0) return;
+
+    setIsExporting(true);
+    try {
+      const { results: exportResults } = await workerApi.searchSNPs({
+        searchTerm: searchTerm || undefined,
+        chromosome: chromosome || undefined,
+        gene: gene || undefined,
+        clinicalSignificance: clinicalSignificance || undefined,
+        disease: disease || undefined,
+        limit: total,
+        offset: 0,
+      });
+      downloadCsvFile("snp-browser-results.csv", buildCsv(exportResults.map(toExportRow), SNP_BROWSER_EXPORT_COLUMNS));
+    } catch (error) {
+      console.error("Export error:", error);
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const hasActiveFilters = searchTerm || chromosome || gene || clinicalSignificance || disease;
+  const hasMoreResults = results.length < total;
 
   const itemContent = (index: number) => {
     const snp = results[index];
@@ -241,23 +334,24 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
               "Searching..."
             ) : (
               <>
-                Showing {results.length} of {total.toLocaleString()} SNP{total !== 1 ? "s" : ""}
+                Showing {results.length.toLocaleString()} of {total.toLocaleString()} SNP{total !== 1 ? "s" : ""}
                 {hasActiveFilters && " (filtered)"}
+                {isLoadingMore && " - loading more..."}
               </>
             )}
           </div>
           <button
             type="button"
-            onClick={handleExportResults}
-            disabled={isSearching || results.length === 0}
+            onClick={() => void handleExportResults()}
+            disabled={isSearching || isExporting || total === 0}
             className={twMerge(
               "rounded bg-blue-500 px-3 py-2 text-sm font-medium text-white transition-colors",
-              isSearching || results.length === 0
+              isSearching || isExporting || total === 0
                 ? "cursor-not-allowed opacity-50"
                 : "cursor-pointer hover:bg-blue-600",
             )}
           >
-            Export CSV
+            {isExporting ? "Exporting..." : "Export CSV"}
           </button>
         </div>
       </div>
@@ -266,7 +360,12 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
       <div className="flex min-h-0 flex-1 gap-4">
         {/* Left panel - List of results */}
         <div className="w-[400px] flex-shrink-0 overflow-hidden rounded border border-gray-300">
-          <Virtuoso style={{ height: "600px" }} totalCount={results.length} itemContent={itemContent} />
+          <Virtuoso
+            style={{ height: "600px" }}
+            totalCount={results.length}
+            itemContent={itemContent}
+            endReached={hasMoreResults ? loadMoreResults : undefined}
+          />
         </div>
 
         {/* Right panel - Selected SNP details */}

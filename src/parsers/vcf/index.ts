@@ -3,10 +3,10 @@ import type { ParseResult, UserGenotype } from "../../types/snp";
 
 const METADATA: ParserMetadata = {
   id: "vcf",
-  name: "VCF",
-  description: "Variant Call Format (VCF) files with genotype sample columns",
+  name: "VCF / gVCF",
+  description: "Variant Call Format (VCF/gVCF) files with genotype sample columns",
   version: "1.0.0",
-  fileExtensions: [".vcf"],
+  fileExtensions: [".vcf", ".gvcf", ".g.vcf", ".vcf.gz", ".g.vcf.gz"],
   providerUrl: "https://samtools.github.io/hts-specs/VCFv4.5.pdf",
 };
 
@@ -16,6 +16,19 @@ const BASE_ORDER: Record<string, number> = {
   g: 2,
   t: 3,
 };
+
+type VcfGenotypeParseResult =
+  | { status: "called"; genotype: string }
+  | { status: "invalid" }
+  | { status: "unsupported" };
+
+interface VcfParseState {
+  genotypes: UserGenotype[];
+  errors: string[];
+  skippedLines: number;
+  totalLines: number;
+  headerFound: boolean;
+}
 
 /**
  * Parser for VCF genotype files.
@@ -65,7 +78,7 @@ export class ParserVCF implements DNAParser {
         hasRsidData = true;
 
         const genotype = this.parseSampleGenotype(parts[3], parts[4], parts[8], parts[9]);
-        if (genotype !== null) {
+        if (genotype.status === "called") {
           validDataLines++;
         }
       }
@@ -90,86 +103,16 @@ export class ParserVCF implements DNAParser {
   }
 
   async parse(content: string, onProgress: ProgressCallback): Promise<ParseResult> {
-    const lines = content.split("\n");
-    const genotypes: UserGenotype[] = [];
-    const errors: string[] = [];
-    let skippedLines = 0;
+    const lines = content.split(/\r?\n/);
     const totalLines = lines.length;
+    const state = this.createParseState(totalLines);
 
     onProgress(0, totalLines);
 
     const batchSize = 1000;
-    let headerFound = false;
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-
-      if (!line) {
-        skippedLines++;
-        continue;
-      }
-
-      if (line.startsWith("##")) {
-        skippedLines++;
-        continue;
-      }
-
-      if (line.startsWith("#CHROM")) {
-        const parts = this.splitColumns(line);
-        headerFound = true;
-        skippedLines++;
-
-        if (parts.length < 10) {
-          errors.push(`Line ${i + 1}: VCF header does not include FORMAT and sample columns`);
-        }
-        continue;
-      }
-
-      if (line.startsWith("#")) {
-        skippedLines++;
-        continue;
-      }
-
-      const parts = this.splitColumns(line);
-      if (parts.length < 8) {
-        errors.push(`Line ${i + 1}: Invalid VCF record - expected at least 8 columns, got ${parts.length}`);
-        skippedLines++;
-        continue;
-      }
-
-      if (!headerFound) {
-        errors.push(`Line ${i + 1}: VCF data record appeared before #CHROM header`);
-        skippedLines++;
-        continue;
-      }
-
-      const [chromosome, position, id, ref, alt] = parts;
-      const rsid = this.extractRsid(id);
-
-      if (!rsid) {
-        skippedLines++;
-        continue;
-      }
-
-      if (parts.length < 10) {
-        errors.push(`Line ${i + 1}: VCF record for ${rsid} does not include FORMAT and sample columns`);
-        skippedLines++;
-        continue;
-      }
-
-      const genotype = this.parseSampleGenotype(ref, alt, parts[8], parts[9]);
-      if (genotype === null) {
-        errors.push(`Line ${i + 1}: Could not convert GT field to SNP bases for ${rsid}`);
-        skippedLines++;
-        continue;
-      }
-
-      genotypes.push({
-        rsid,
-        chromosome: this.normalizeChromosome(chromosome),
-        position,
-        genotype,
-      });
+      this.processLine(lines[i], i + 1, state);
 
       if (i % batchSize === 0 || i === lines.length - 1) {
         onProgress(i + 1, totalLines);
@@ -177,11 +120,156 @@ export class ParserVCF implements DNAParser {
     }
 
     return {
-      genotypes,
+      genotypes: state.genotypes,
       totalLines,
-      skippedLines,
-      errors,
+      skippedLines: state.skippedLines,
+      errors: state.errors,
     };
+  }
+
+  async parseBlob(file: Blob & { name?: string }, onProgress: ProgressCallback): Promise<ParseResult> {
+    const state = this.createParseState(0);
+    const totalBytes = file.size;
+    const stream = this.openTextStream(file);
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let bufferedText = "";
+    let bytesRead = 0;
+
+    onProgress(0, totalBytes);
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      bytesRead += value.byteLength;
+      const text = decoder.decode(value, { stream: true });
+      const lines = (bufferedText + text).split(/\r?\n/);
+      bufferedText = lines.pop() ?? "";
+
+      for (const line of lines) {
+        state.totalLines++;
+        this.processLine(line, state.totalLines, state);
+      }
+
+      onProgress(Math.min(bytesRead, totalBytes), totalBytes);
+    }
+
+    const finalText = bufferedText + decoder.decode();
+    if (finalText) {
+      state.totalLines++;
+      this.processLine(finalText, state.totalLines, state);
+    }
+
+    onProgress(totalBytes, totalBytes);
+
+    return {
+      genotypes: state.genotypes,
+      totalLines: state.totalLines,
+      skippedLines: state.skippedLines,
+      errors: state.errors,
+    };
+  }
+
+  private createParseState(totalLines: number): VcfParseState {
+    return {
+      genotypes: [],
+      errors: [],
+      skippedLines: 0,
+      totalLines,
+      headerFound: false,
+    };
+  }
+
+  private openTextStream(file: Blob & { name?: string }): ReadableStream<Uint8Array> {
+    const stream = file.stream();
+    if (!file.name?.toLowerCase().endsWith(".gz")) {
+      return stream;
+    }
+
+    if (!("DecompressionStream" in globalThis)) {
+      throw new Error(
+        "Compressed VCF files are not supported in this browser. Please upload an uncompressed VCF/gVCF.",
+      );
+    }
+
+    return stream.pipeThrough(new DecompressionStream("gzip"));
+  }
+
+  private processLine(rawLine: string, lineNumber: number, state: VcfParseState): void {
+    const line = rawLine.trim();
+
+    if (!line) {
+      state.skippedLines++;
+      return;
+    }
+
+    if (line.startsWith("##")) {
+      state.skippedLines++;
+      return;
+    }
+
+    if (line.startsWith("#CHROM")) {
+      const parts = this.splitColumns(line);
+      state.headerFound = true;
+      state.skippedLines++;
+
+      if (parts.length < 10) {
+        state.errors.push(`Line ${lineNumber}: VCF header does not include FORMAT and sample columns`);
+      }
+      return;
+    }
+
+    if (line.startsWith("#")) {
+      state.skippedLines++;
+      return;
+    }
+
+    const parts = this.splitColumns(line);
+    if (parts.length < 8) {
+      state.errors.push(`Line ${lineNumber}: Invalid VCF record - expected at least 8 columns, got ${parts.length}`);
+      state.skippedLines++;
+      return;
+    }
+
+    if (!state.headerFound) {
+      state.errors.push(`Line ${lineNumber}: VCF data record appeared before #CHROM header`);
+      state.skippedLines++;
+      return;
+    }
+
+    const [chromosome, position, id, ref, alt] = parts;
+    const rsid = this.extractRsid(id);
+
+    if (!rsid) {
+      state.skippedLines++;
+      return;
+    }
+
+    if (parts.length < 10 || parts[8] === undefined || parts[9] === undefined) {
+      state.errors.push(`Line ${lineNumber}: VCF record for ${rsid} does not include FORMAT and sample columns`);
+      state.skippedLines++;
+      return;
+    }
+
+    const genotype = this.parseSampleGenotype(ref ?? "", alt ?? "", parts[8], parts[9]);
+    if (genotype.status === "unsupported") {
+      state.skippedLines++;
+      return;
+    }
+
+    if (genotype.status === "invalid") {
+      state.errors.push(`Line ${lineNumber}: Could not convert GT field to SNP bases for ${rsid}`);
+      state.skippedLines++;
+      return;
+    }
+
+    state.genotypes.push({
+      rsid,
+      chromosome: this.normalizeChromosome(chromosome ?? ""),
+      position: position ?? "",
+      genotype: genotype.genotype,
+    });
   }
 
   private splitColumns(line: string): string[] {
@@ -199,36 +287,36 @@ export class ParserVCF implements DNAParser {
     return normalized.toUpperCase() === "M" ? "MT" : normalized;
   }
 
-  private parseSampleGenotype(ref: string, alt: string, format: string, sample: string): string | null {
+  private parseSampleGenotype(ref: string, alt: string, format: string, sample: string): VcfGenotypeParseResult {
     const formatFields = format.split(":");
     const sampleFields = sample.split(":");
     const genotypeIndex = formatFields.indexOf("GT");
     const genotypeField = genotypeIndex >= 0 ? sampleFields[genotypeIndex] : sampleFields[0];
 
-    if (!genotypeField) return null;
+    if (!genotypeField) return { status: "invalid" };
 
     const alleleIndexes = genotypeField.split(/[/|]/);
-    if (alleleIndexes.length === 0) return null;
+    if (alleleIndexes.length === 0) return { status: "invalid" };
 
     if (alleleIndexes.some((alleleIndex) => alleleIndex === ".")) {
-      return "--";
+      return { status: "called", genotype: "--" };
     }
 
     const alleles = [ref, ...alt.split(",")];
     const genotypeBases: string[] = [];
 
     for (const alleleIndex of alleleIndexes) {
-      if (!/^\d+$/.test(alleleIndex)) return null;
+      if (!/^\d+$/.test(alleleIndex)) return { status: "invalid" };
 
       const allele = alleles[Number(alleleIndex)]?.toLowerCase();
       if (!allele || !/^[acgt]$/.test(allele)) {
-        return null;
+        return { status: "unsupported" };
       }
 
       genotypeBases.push(allele);
     }
 
-    return this.normalizeGenotypeOrder(genotypeBases);
+    return { status: "called", genotype: this.normalizeGenotypeOrder(genotypeBases) };
   }
 
   private normalizeGenotypeOrder(alleles: string[]): string {

@@ -17,17 +17,18 @@ const parsedValue = (value: unknown) => (value === null || value === undefined ?
 
 const SNP_EXPORT_COLUMNS: CsvColumn<MatchedSNP>[] = [
   { header: "RSID", value: (match) => match.rsid },
+  { header: "Gene Symbol", value: (match) => match.parsedData.geneSymbol },
   { header: "User Genotype", value: (match) => match.genotype },
   { header: "Chromosome", value: (match) => match.chromosome },
   { header: "Position", value: (match) => match.position },
   { header: "SNPedia Genotype", value: (match) => match.genotypeData?.genotype },
   { header: "Genotype ID", value: (match) => match.genotypeData?.id },
   { header: "Magnitude", value: (match) => match.parsedData.magnitude },
+  { header: "Repute", value: (match) => parsedValue(match.parsedData.repute) },
+  { header: "Summary", value: (match) => parsedValue(match.parsedData.summary) },
   { header: "Orientation", value: (match) => parsedValue(match.parsedData.orientation) },
   { header: "Stabilized Orientation", value: (match) => parsedValue(match.parsedData.stabilizedOrientation) },
   { header: "SNPedia URL", value: (match) => `https://www.snpedia.com/index.php/${match.rsid}` },
-  { header: "Genotype Content", value: (match) => match.genotypeData?.content },
-  { header: "SNP Content", value: (match) => match.snpData.content },
 ];
 
 export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
