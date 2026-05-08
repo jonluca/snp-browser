@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { gzipSync } from "node:zlib";
 import parserVCF from "../src/parsers/vcf";
 
 const gvcfContent = `##fileformat=VCFv4.2
@@ -13,6 +14,7 @@ chrM\t270\trs456\tC\t<NON_REF>\t.\t.\tEND=270\tGT:DP\t0/0:20
 test("VCF parser metadata advertises gVCF extensions", () => {
   expect(parserVCF.metadata.fileExtensions).toContain(".gvcf");
   expect(parserVCF.metadata.fileExtensions).toContain(".g.vcf.gz");
+  expect(parserVCF.metadata.fileExtensions).toContain(".gz");
 });
 
 test("VCF parser accepts gVCF records and skips indels", async () => {
@@ -43,4 +45,27 @@ test("VCF parser streams VCF blobs", async () => {
 
   expect(result.genotypes.map((genotype) => genotype.rsid)).toEqual(["rs123", "rs456"]);
   expect(result.totalLines).toBe(7);
+});
+
+test("VCF parser streams provider-style gzip VCF blobs", async () => {
+  const file = new File([gzipSync(gvcfContent)], "JonLuca_DeCaro_nucleus_dna_download_vcf_NU-NQAF-0943.gz");
+
+  const result = await parserVCF.parseBlob(file, () => undefined);
+
+  expect(result.errors).toEqual([]);
+  expect(result.genotypes.map((genotype) => genotype.rsid)).toEqual(["rs123", "rs456"]);
+});
+
+test("VCF parser skips coordinate-only records without treating them as parse failures", async () => {
+  const content = `##fileformat=VCFv4.2
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE
+chr1\t10616\t.\tC\tG\t.\tPASS\t.\tGT\t0/1
+chr1\t10642\t.\tG\tA\t.\tPASS\t.\tGT\t1/1`;
+
+  const result = await parserVCF.parse(content, () => undefined);
+
+  expect(result.errors).toEqual([]);
+  expect(result.genotypes).toEqual([]);
+  expect(result.skippedLines).toBe(result.totalLines);
 });
