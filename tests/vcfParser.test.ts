@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { gzipSync } from "node:zlib";
+import { deflateRawSync, gzipSync } from "node:zlib";
 import parserVCF from "../src/parsers/vcf";
 
 const gvcfContent = `##fileformat=VCFv4.2
@@ -10,6 +10,56 @@ const gvcfContent = `##fileformat=VCFv4.2
 1\t260\trs789\tA\tAC,<NON_REF>\t.\t.\t.\tGT:DP\t0/1:20
 chrM\t270\trs456\tC\t<NON_REF>\t.\t.\tEND=270\tGT:DP\t0/0:20
 `;
+
+function createBgzfBlock(content: string): Uint8Array {
+  const input = new TextEncoder().encode(content);
+  const compressed = deflateRawSync(input);
+  const blockSize = 18 + compressed.byteLength + 8;
+
+  if (blockSize > 0x10000) {
+    throw new Error("Test BGZF block exceeds the maximum block size");
+  }
+
+  const block = new Uint8Array(blockSize);
+  const bsize = blockSize - 1;
+  block.set([
+    0x1f,
+    0x8b,
+    0x08,
+    0x04,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0x00,
+    0xff,
+    0x06,
+    0x00,
+    0x42,
+    0x43,
+    0x02,
+    0x00,
+    bsize & 0xff,
+    (bsize >> 8) & 0xff,
+  ]);
+  block.set(compressed, 18);
+  new DataView(block.buffer).setUint32(blockSize - 4, input.byteLength, true);
+
+  return block;
+}
+
+function concatBytes(chunks: Uint8Array[]): Uint8Array {
+  const totalLength = chunks.reduce((sum, chunk) => sum + chunk.byteLength, 0);
+  const output = new Uint8Array(totalLength);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  return output;
+}
 
 test("VCF parser metadata advertises gVCF extensions", () => {
   expect(parserVCF.metadata.fileExtensions).toContain(".gvcf");
@@ -54,6 +104,37 @@ test("VCF parser streams provider-style gzip VCF blobs", async () => {
 
   expect(result.errors).toEqual([]);
   expect(result.genotypes.map((genotype) => genotype.rsid)).toEqual(["rs123", "rs456"]);
+});
+
+test("VCF parser streams blocked gzip VCF blobs without relying on browser gzip member handling", async () => {
+  const originalDecompressionStream = globalThis.DecompressionStream;
+  const breakAt = gvcfContent.indexOf("1\t250");
+  const bgzfContent = concatBytes([
+    createBgzfBlock(gvcfContent.slice(0, breakAt)),
+    createBgzfBlock(gvcfContent.slice(breakAt)),
+    createBgzfBlock(""),
+  ]);
+  const file = new File([bgzfContent], "JonLuca_DeCaro_nucleus_dna_download_vcf_NU-NQAF-0943.gz");
+
+  class RejectingGzipDecompressionStream extends originalDecompressionStream {
+    constructor(format: CompressionFormat) {
+      if (format === "gzip") {
+        throw new Error("Junk found after end of compressed data.");
+      }
+      super(format);
+    }
+  }
+
+  globalThis.DecompressionStream = RejectingGzipDecompressionStream;
+
+  try {
+    const result = await parserVCF.parseBlob(file, () => undefined);
+
+    expect(result.errors).toEqual([]);
+    expect(result.genotypes.map((genotype) => genotype.rsid)).toEqual(["rs123", "rs456"]);
+  } finally {
+    globalThis.DecompressionStream = originalDecompressionStream;
+  }
 });
 
 test("VCF parser skips coordinate-only records without treating them as parse failures", async () => {

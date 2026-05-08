@@ -17,10 +17,21 @@ const BASE_ORDER: Record<string, number> = {
   t: 3,
 };
 
+const BGZF_HEADER_READ_SIZE = 256;
+const BGZF_EXTRA_ID1 = 0x42;
+const BGZF_EXTRA_ID2 = 0x43;
+const GZIP_ID1 = 0x1f;
+const GZIP_ID2 = 0x8b;
+const GZIP_DEFLATE_METHOD = 0x08;
+const GZIP_FLAG_FEXTRA = 0x04;
+
 type VcfGenotypeParseResult =
   | { status: "called"; genotype: string }
   | { status: "invalid" }
   | { status: "unsupported" };
+
+type BgzfBlockHeader = { blockSize: number; payloadOffset: number };
+type BgzfHeaderResult = BgzfBlockHeader | "need-more" | null;
 
 interface VcfParseState {
   genotypes: UserGenotype[];
@@ -130,7 +141,7 @@ export class ParserVCF implements DNAParser {
   async parseBlob(file: Blob & { name?: string }, onProgress: ProgressCallback): Promise<ParseResult> {
     const state = this.createParseState(0);
     const totalBytes = file.size;
-    const stream = this.openTextStream(file);
+    const stream = await this.openTextStream(file);
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let bufferedText = "";
@@ -181,7 +192,7 @@ export class ParserVCF implements DNAParser {
     };
   }
 
-  private openTextStream(file: Blob & { name?: string }): ReadableStream<Uint8Array> {
+  private async openTextStream(file: Blob & { name?: string }): Promise<ReadableStream<Uint8Array>> {
     const stream = file.stream();
     if (!file.name?.toLowerCase().endsWith(".gz")) {
       return stream;
@@ -193,7 +204,189 @@ export class ParserVCF implements DNAParser {
       );
     }
 
+    if (await this.isBgzf(file)) {
+      return this.openBgzfTextStream(file);
+    }
+
     return stream.pipeThrough(new DecompressionStream("gzip"));
+  }
+
+  private async isBgzf(file: Blob): Promise<boolean> {
+    const headerBytes = new Uint8Array(await file.slice(0, BGZF_HEADER_READ_SIZE).arrayBuffer());
+    const header = this.readBgzfBlockHeader(headerBytes);
+    return header !== null && header !== "need-more";
+  }
+
+  private openBgzfTextStream(file: Blob): ReadableStream<Uint8Array> {
+    const blocks = this.streamBgzfBlocks(file.stream());
+    const iterator = blocks[Symbol.asyncIterator]();
+
+    return new ReadableStream<Uint8Array>({
+      async pull(controller) {
+        try {
+          const { done, value } = await iterator.next();
+          if (done) {
+            controller.close();
+            return;
+          }
+
+          controller.enqueue(value);
+        } catch (error) {
+          controller.error(error);
+        }
+      },
+      async cancel() {
+        await iterator.return?.(undefined);
+      },
+    });
+  }
+
+  private async *streamBgzfBlocks(source: ReadableStream<Uint8Array>): AsyncGenerator<Uint8Array> {
+    const reader = source.getReader();
+    let pending: Uint8Array = new Uint8Array();
+
+    try {
+      while (true) {
+        const nextBlock = await this.readNextBgzfBlock(reader, pending);
+        pending = nextBlock.pending;
+
+        if (nextBlock.done) {
+          if (pending.byteLength > 0) {
+            throw new Error("Compressed VCF file ended with an incomplete BGZF block.");
+          }
+          return;
+        }
+
+        if (nextBlock.value.byteLength > 0) {
+          yield nextBlock.value;
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+
+  private async readNextBgzfBlock(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    pending: Uint8Array,
+  ): Promise<{ done: true; pending: Uint8Array } | { done: false; pending: Uint8Array; value: Uint8Array }> {
+    while (true) {
+      const blockHeader = this.readBgzfBlockHeader(pending);
+
+      if (blockHeader !== "need-more") {
+        if (!blockHeader) {
+          throw new Error("Compressed VCF file contains an invalid BGZF block.");
+        }
+
+        if (pending.byteLength >= blockHeader.blockSize) {
+          const block = pending.subarray(0, blockHeader.blockSize);
+          const compressedData = block.subarray(blockHeader.payloadOffset, blockHeader.blockSize - 8);
+          const value = await this.inflateRaw(compressedData);
+
+          this.validateBgzfBlockSize(block, value.byteLength);
+
+          return {
+            done: false,
+            pending: pending.subarray(blockHeader.blockSize),
+            value,
+          };
+        }
+      }
+
+      const { done, value } = await reader.read();
+      if (done) {
+        return { done: true, pending };
+      }
+
+      pending = this.appendBytes(pending, value);
+    }
+  }
+
+  private readBgzfBlockHeader(bytes: Uint8Array): BgzfHeaderResult {
+    if (bytes.byteLength < 12) {
+      return "need-more";
+    }
+
+    if (
+      bytes[0] !== GZIP_ID1 ||
+      bytes[1] !== GZIP_ID2 ||
+      bytes[2] !== GZIP_DEFLATE_METHOD ||
+      (bytes[3] & GZIP_FLAG_FEXTRA) === 0
+    ) {
+      return null;
+    }
+
+    const extraLength = this.readUint16LE(bytes, 10);
+    const extraStart = 12;
+    const extraEnd = extraStart + extraLength;
+
+    if (bytes.byteLength < extraEnd) {
+      return "need-more";
+    }
+
+    let offset = extraStart;
+    let blockSize: number | null = null;
+
+    while (offset + 4 <= extraEnd) {
+      const subfieldLength = this.readUint16LE(bytes, offset + 2);
+      const subfieldDataStart = offset + 4;
+      const subfieldDataEnd = subfieldDataStart + subfieldLength;
+
+      if (subfieldDataEnd > extraEnd) {
+        return null;
+      }
+
+      if (bytes[offset] === BGZF_EXTRA_ID1 && bytes[offset + 1] === BGZF_EXTRA_ID2 && subfieldLength === 2) {
+        blockSize = this.readUint16LE(bytes, subfieldDataStart) + 1;
+      }
+
+      offset = subfieldDataEnd;
+    }
+
+    if (offset !== extraEnd || blockSize === null || blockSize < extraEnd + 8) {
+      return null;
+    }
+
+    return { blockSize, payloadOffset: extraEnd };
+  }
+
+  private async inflateRaw(compressedData: Uint8Array): Promise<Uint8Array> {
+    const stream = new Blob([this.bytesToArrayBuffer(compressedData)])
+      .stream()
+      .pipeThrough(new DecompressionStream("deflate-raw"));
+
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  private validateBgzfBlockSize(block: Uint8Array, inflatedSize: number): void {
+    const expectedSize = this.readUint32LE(block, block.byteLength - 4);
+    if (expectedSize !== inflatedSize) {
+      throw new Error("Compressed VCF file contains a BGZF block with an invalid uncompressed size.");
+    }
+  }
+
+  private appendBytes(left: Uint8Array, right: Uint8Array): Uint8Array {
+    if (left.byteLength === 0) {
+      return right;
+    }
+
+    const joined = new Uint8Array(left.byteLength + right.byteLength);
+    joined.set(left);
+    joined.set(right, left.byteLength);
+
+    return joined;
+  }
+
+  private readUint16LE(bytes: Uint8Array, offset: number): number {
+    return bytes[offset] | (bytes[offset + 1] << 8);
+  }
+
+  private readUint32LE(bytes: Uint8Array, offset: number): number {
+    return (bytes[offset] | (bytes[offset + 1] << 8) | (bytes[offset + 2] << 16) | (bytes[offset + 3] << 24)) >>> 0;
+  }
+
+  private bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+    return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
   }
 
   private processLine(rawLine: string, lineNumber: number, state: VcfParseState): void {
