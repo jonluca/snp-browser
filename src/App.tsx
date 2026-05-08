@@ -222,9 +222,8 @@ function App() {
 
   // Determine app state
   const hasResults = matches && matches.length >= 0 && genosets !== null;
-  const fatalError = dbError || workerError || parserWorkerError;
-  const uploadError = matchError && !fatalError;
-  const hasError = fatalError || matchError;
+  const error = dbError || matchError || workerError || parserWorkerError;
+  const hasError = Boolean(error);
   const isDatabaseReady = Boolean(dbStats) && !isDbLoading && !dbError;
   const isProcessing = isParsing || isMatching || isMatchingGenosets;
   const isWaitingForDatabase = isMatching && !isDatabaseReady;
@@ -274,25 +273,19 @@ function App() {
 
         {/* Error */}
         {hasError && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-10 text-center">
+          <div className="mb-6 rounded-lg border border-red-200 bg-red-50 p-10 text-center">
             <div className="mb-4 text-5xl">⚠️</div>
             <h2 className="mb-4 text-2xl font-semibold text-gray-800">Error</h2>
-            <p className="text-red-600">
-              {fatalError?.message || matchError?.message || "An unknown error occurred"}
-            </p>
-            <button
-              onClick={uploadError ? handleReset : () => window.location.reload()}
-              className="mt-4 rounded bg-blue-500 px-6 py-3 text-sm font-medium text-white transition-colors hover:bg-blue-600"
-            >
-              {uploadError ? "Upload Another File" : "Reload Page"}
-            </button>
+            <p className="text-red-600">{error?.message || "An unknown error occurred"}</p>
+            <p className="mt-2 text-sm text-gray-600">Choose another file below to try again.</p>
           </div>
         )}
 
         {/* Main content area */}
-        {!hasError && !hasResults && !isParsing && !isMatching && !isMatchingGenosets && (
+        {!hasResults && !isParsing && !isMatching && !isMatchingGenosets && (
           <>
             {mode === "browse" &&
+              !hasError &&
               (isDatabaseReady && workerApi ? (
                 <SNPBrowser workerApi={workerApi} />
               ) : (
@@ -311,7 +304,7 @@ function App() {
                   </p>
                 </div>
               ))}
-            {mode === "upload" && (
+            {(mode === "upload" || hasError) && (
               <>
                 <FileUpload onFileSelect={handleFileSelect} disabled={!canUpload} />
                 {isDbLoading && (
