@@ -16,8 +16,13 @@ function isVcfLikeFile(file: File): boolean {
     lowerFilename.endsWith(".gvcf") ||
     lowerFilename.endsWith(".g.vcf") ||
     lowerFilename.endsWith(".vcf.gz") ||
-    lowerFilename.endsWith(".g.vcf.gz")
+    lowerFilename.endsWith(".g.vcf.gz") ||
+    (lowerFilename.endsWith(".gz") && lowerFilename.includes("vcf"))
   );
+}
+
+function isZipFile(file: File): boolean {
+  return file.name.toLowerCase().endsWith(".zip");
 }
 
 function formatBytes(bytes: number): string {
@@ -111,8 +116,9 @@ function App() {
         setIsParsing(true);
         setMatchError(null);
 
-        const parseAsStream = isVcfLikeFile(file);
-        const result = parseAsStream
+        const parseAsBlob = isVcfLikeFile(file) || isZipFile(file);
+        const showByteProgress = isVcfLikeFile(file) && !isZipFile(file);
+        const result = parseAsBlob
           ? await parserWorkerApi.parseFileBlob(
               file,
               proxy((current: number, total: number) => {
@@ -121,7 +127,9 @@ function App() {
                   progressBarRef.current.style.width = `${progress}%`;
                 }
                 if (progressTextRef.current) {
-                  progressTextRef.current.textContent = `${formatBytes(current)} / ${formatBytes(total)} read`;
+                  progressTextRef.current.textContent = showByteProgress
+                    ? `${formatBytes(current)} / ${formatBytes(total)} read`
+                    : `${current.toLocaleString()} / ${total.toLocaleString()} processed`;
                 }
               }),
             )

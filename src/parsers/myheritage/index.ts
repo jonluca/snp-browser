@@ -27,7 +27,7 @@ export class ParserMyHeritage implements DNAParser {
   readonly metadata = METADATA;
 
   validate(content: string): ValidationResult {
-    const lines = content.split("\n").slice(0, 100); // Check first 100 lines
+    const lines = content.split("\n").slice(0, 5000);
 
     let hasMyHeritageHeader = false;
     let hasCSVHeader = false;
@@ -59,7 +59,7 @@ export class ParserMyHeritage implements DNAParser {
       }
 
       // Check for valid rsid data in CSV format
-      const parts = trimmed.split(",");
+      const parts = this.parseCSVLine(trimmed);
       if (parts.length >= 4 && /^(rs|i)\d+/i.test(parts[0])) {
         hasRsidData = true;
         validDataLines++;
@@ -121,7 +121,7 @@ export class ParserMyHeritage implements DNAParser {
       }
 
       // Skip comment lines
-      if (line.startsWith("##")) {
+      if (line.startsWith("#")) {
         skippedLines++;
         continue;
       }
@@ -135,7 +135,7 @@ export class ParserMyHeritage implements DNAParser {
       }
 
       // Parse CSV data line
-      const parts = line.split(",");
+      const parts = this.parseCSVLine(line).map((part) => part.trim());
 
       if (parts.length < 4) {
         errors.push(`Line ${i + 1}: Invalid format - expected 4 CSV columns, got ${parts.length}`);
@@ -167,6 +167,38 @@ export class ParserMyHeritage implements DNAParser {
       skippedLines,
       errors,
     };
+  }
+
+  private parseCSVLine(line: string): string[] {
+    const result: string[] = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      const nextChar = line[i + 1];
+
+      if (char === '"') {
+        if (inQuotes && nextChar === '"') {
+          current += '"';
+          i++;
+        } else {
+          inQuotes = !inQuotes;
+        }
+        continue;
+      }
+
+      if (char === "," && !inQuotes) {
+        result.push(current);
+        current = "";
+        continue;
+      }
+
+      current += char;
+    }
+
+    result.push(current);
+    return result;
   }
 }
 

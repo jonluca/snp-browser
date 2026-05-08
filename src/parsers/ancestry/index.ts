@@ -54,8 +54,13 @@ export class ParserAncestry implements DNAParser {
         continue;
       }
 
-      // Skip empty lines
       if (!trimmed) continue;
+
+      const lower = trimmed.toLowerCase();
+      if (lower.includes("allele1") && lower.includes("allele2")) {
+        hasAlleleColumns = true;
+        continue;
+      }
 
       // Check for valid rsid data format
       const parts = trimmed.split(/\t/); // Ancestry typically uses tabs

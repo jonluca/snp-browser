@@ -6,7 +6,7 @@ const METADATA: ParserMetadata = {
   name: "VCF / gVCF",
   description: "Variant Call Format (VCF/gVCF) files with genotype sample columns",
   version: "1.0.0",
-  fileExtensions: [".vcf", ".gvcf", ".g.vcf", ".vcf.gz", ".g.vcf.gz"],
+  fileExtensions: [".vcf", ".gvcf", ".g.vcf", ".vcf.gz", ".g.vcf.gz", ".gz"],
   providerUrl: "https://samtools.github.io/hts-specs/VCFv4.5.pdf",
 };
 

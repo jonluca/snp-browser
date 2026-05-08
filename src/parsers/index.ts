@@ -9,6 +9,7 @@
  *
  * - 23andMe: Tab/space-separated TXT files
  * - AncestryDNA: Tab-separated TXT files with separate allele columns
+ * - Color: CSV files with SampleID,Chromosome,Position,RSID,Genotype format
  * - MyHeritage: CSV files with RSID,CHROMOSOME,POSITION,RESULT format
  * - FamilyTreeDNA: CSV files with quoted values
  * - Vitagene: CSV/TXT files with RSID,CHROMOSOME,POSITION,RESULT format
@@ -35,13 +36,14 @@ export type { DNAParser, ValidationResult, ProgressCallback, ParserMetadata, For
 // Individual parsers
 import parser23andMe from "./23andme";
 import parserAncestry from "./ancestry";
+import parserColor from "./color";
 import parserMyHeritage from "./myheritage";
 import parserFTDNA from "./ftdna";
 import parserVitagene from "./vitagene";
 import parserVCF from "./vcf";
 
 // Re-export parsers
-export { parser23andMe, parserAncestry, parserMyHeritage, parserFTDNA, parserVitagene, parserVCF };
+export { parser23andMe, parserAncestry, parserColor, parserMyHeritage, parserFTDNA, parserVitagene, parserVCF };
 
 // Auto-register all parsers
 import { parserRegistry } from "./registry";
@@ -49,6 +51,7 @@ import { parserRegistry } from "./registry";
 // Register all available parsers
 parserRegistry.register(parser23andMe);
 parserRegistry.register(parserAncestry);
+parserRegistry.register(parserColor);
 parserRegistry.register(parserMyHeritage);
 parserRegistry.register(parserFTDNA);
 parserRegistry.register(parserVitagene);

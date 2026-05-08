@@ -8,7 +8,7 @@ interface FileUploadProps {
 }
 
 // Get supported file extensions and formats
-const SUPPORTED_EXTENSIONS = getSupportedExtensions().join(",");
+const SUPPORTED_EXTENSIONS = Array.from(new Set([...getSupportedExtensions(), ".zip"])).join(",");
 const SUPPORTED_FORMATS = getAllParsers();
 
 export function FileUpload({ onFileSelect, disabled = false }: FileUploadProps) {

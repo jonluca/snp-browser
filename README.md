@@ -21,10 +21,12 @@ The SNP database is hosted at https://static.snpbrowser.com/snp-2025113.db
 - **Multi-Format Support**: Automatically detects and parses DNA data from multiple providers
   - 23andMe (TXT, CSV)
   - AncestryDNA (TXT, CSV)
+  - Color discovery genotypes (CSV)
   - MyHeritage (CSV)
   - FamilyTreeDNA (CSV)
   - Vitagene (TXT, CSV)
   - VCF/gVCF (Variant Call Format, including common whole-genome gVCF exports)
+  - ZIP archives containing supported raw data files
 - **Automatic Format Detection**: Smart detection system identifies file format with confidence scoring
 - **Client-side SQLite**: Process genomic data entirely in the browser using sql.js
 - **Virtualized Rendering**: Efficiently display large datasets with react-virtuoso
@@ -122,6 +124,13 @@ bun run prod
 - **Structure**: `RSID,"CHROMOSOME","POSITION","RESULT"`
 - **Example**: `rs4477212,"1","82154","AA"`
 
+### Color Discovery Genotypes
+
+- **Format**: CSV with sample, chromosome, position, rsID, and genotype columns
+- **Extensions**: `.csv`
+- **Structure**: `SampleID,Chromosome,Position,RSID,Genotype,ReferenceVersion`
+- **Example**: `L2137024,2,136707981,rs6754311,CC,GRCh37`
+
 ### Vitagene
 
 - **Format**: CSV/TXT with RSID, chromosome, position, and result columns
@@ -139,6 +148,7 @@ bun run prod
 - **Note**: gVCF reference blocks and indels are skipped; SNP records with rsIDs are matched against SNPedia.
 
 The application automatically detects the file format when you upload your DNA data.
+For provider downloads delivered as ZIP archives, upload the ZIP directly; the app will use the first supported raw data file inside.
 
 ## Architecture
 

@@ -1,77 +1,47 @@
-import type { DNAParser, ProgressCallback, ParserMetadata, ValidationResult } from "../types";
+import type { DNAParser, ParserMetadata, ProgressCallback, ValidationResult } from "../types";
 import type { ParseResult, UserGenotype } from "../../types/snp";
 
 const METADATA: ParserMetadata = {
-  id: "vitagene",
-  name: "Vitagene",
-  description: "Vitagene raw data export with RSID,CHROMOSOME,POSITION,RESULT columns",
+  id: "color",
+  name: "Color",
+  description: "Color discovery genotype CSV export",
   version: "1.0.0",
-  fileExtensions: [".txt", ".csv"],
-  providerUrl: "https://vitagene.com",
+  fileExtensions: [".csv"],
+  providerUrl: "https://www.color.com",
 };
 
-const SAMPLE_LINE_COUNT = 5000;
-
-export class ParserVitagene implements DNAParser {
+export class ParserColor implements DNAParser {
   readonly metadata = METADATA;
 
   validate(content: string): ValidationResult {
-    const lines = content.split("\n").slice(0, SAMPLE_LINE_COUNT);
-
+    const lines = content.split("\n").slice(0, 500);
     let hasHeader = false;
-    let hasVitageneComment = false;
-    let hasKnownOtherProviderComment = false;
     let validDataLines = 0;
-    let hasCommaSeparatedRows = false;
 
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
 
-      if (trimmed.startsWith("#")) {
-        const lowerComment = trimmed.toLowerCase();
-        if (lowerComment.includes("vitagene")) {
-          hasVitageneComment = true;
-        }
-        if (lowerComment.includes("myheritage")) {
-          hasKnownOtherProviderComment = true;
-        }
-        continue;
-      }
-
       const parts = this.parseCSVLine(trimmed);
-      const normalizedHeader = parts.map((part) => part.trim().toUpperCase());
-      if (
-        normalizedHeader[0] === "RSID" &&
-        normalizedHeader[1] === "CHROMOSOME" &&
-        normalizedHeader[2] === "POSITION" &&
-        normalizedHeader[3] === "RESULT"
-      ) {
+      if (this.isHeader(parts)) {
         hasHeader = true;
-        hasCommaSeparatedRows = trimmed.includes(",");
         continue;
       }
 
-      if (parts.length >= 4 && this.isSupportedRsid(parts[0]) && this.isSupportedGenotype(parts[3])) {
+      if (parts.length >= 5 && this.isSupportedRsid(parts[3]) && this.isSupportedGenotype(parts[4])) {
         validDataLines++;
-        hasCommaSeparatedRows = trimmed.includes(",");
       }
     }
 
-    let confidence = 0;
-    if (hasHeader) confidence += 0.55;
-    if (hasCommaSeparatedRows) confidence += 0.2;
-    if (validDataLines >= 3) confidence += 0.25;
-    if (hasVitageneComment) confidence += 0.1;
-
-    const valid = hasHeader && validDataLines >= 3 && !hasKnownOtherProviderComment;
+    const valid = hasHeader && validDataLines >= 1;
+    const confidence = valid ? 0.9 : 0;
 
     return {
       valid,
-      confidence: valid ? confidence : 0,
+      confidence,
       reason: valid
-        ? `Detected Vitagene-style RSID CSV format with ${validDataLines} valid data lines in the sampled lines`
-        : "File doesn't appear to be Vitagene RSID CSV format",
+        ? `Detected Color discovery genotype CSV format with ${validDataLines} valid data lines`
+        : "File doesn't appear to be Color discovery genotype CSV format",
       detectedFormat: valid ? METADATA.id : undefined,
     };
   }
@@ -88,32 +58,25 @@ export class ParserVitagene implements DNAParser {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-
-      if (!line || line.startsWith("#")) {
+      if (!line) {
         skippedLines++;
         continue;
       }
 
-      const parts = this.parseCSVLine(line);
+      const parts = this.parseCSVLine(line).map((part) => part.trim());
       if (this.isHeader(parts)) {
         skippedLines++;
         continue;
       }
 
-      if (parts.length < 4) {
-        errors.push(`Line ${i + 1}: Invalid format - expected 4 columns, got ${parts.length}`);
+      if (parts.length < 5) {
+        errors.push(`Line ${i + 1}: Invalid format - expected at least 5 columns, got ${parts.length}`);
         skippedLines++;
         continue;
       }
 
-      const [rsid, chromosome, position, result] = parts.map((part) => part.trim());
-
-      if (!this.isSupportedRsid(rsid)) {
-        skippedLines++;
-        continue;
-      }
-
-      if (!this.isSupportedGenotype(result)) {
+      const [, chromosome, position, rsid, genotype] = parts;
+      if (!this.isSupportedRsid(rsid) || !this.isSupportedGenotype(genotype)) {
         skippedLines++;
         continue;
       }
@@ -122,7 +85,7 @@ export class ParserVitagene implements DNAParser {
         rsid: rsid.toLowerCase(),
         chromosome,
         position,
-        genotype: result.toLowerCase(),
+        genotype: genotype.toLowerCase(),
       });
 
       if (i % batchSize === 0 || i === lines.length - 1) {
@@ -141,10 +104,11 @@ export class ParserVitagene implements DNAParser {
   private isHeader(parts: string[]): boolean {
     const normalized = parts.map((part) => part.trim().toUpperCase());
     return (
-      normalized[0] === "RSID" &&
+      normalized[0] === "SAMPLEID" &&
       normalized[1] === "CHROMOSOME" &&
       normalized[2] === "POSITION" &&
-      normalized[3] === "RESULT"
+      normalized[3] === "RSID" &&
+      normalized[4] === "GENOTYPE"
     );
   }
 
@@ -189,4 +153,4 @@ export class ParserVitagene implements DNAParser {
   }
 }
 
-export default new ParserVitagene();
+export default new ParserColor();
