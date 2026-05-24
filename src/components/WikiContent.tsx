@@ -30,10 +30,10 @@ function shouldHighlight(key: string): boolean {
 function getValueColorClass(key: string, value: unknown): string {
   if (key.toLowerCase() === "repute" && typeof value === "string") {
     const lowerValue = value.toLowerCase();
-    if (lowerValue === "bad" || lowerValue === "pathogenic") return "text-red-600 font-medium";
-    if (lowerValue === "good" || lowerValue === "benign") return "text-green-600 font-medium";
+    if (lowerValue === "bad" || lowerValue === "pathogenic") return "text-red-700 font-medium";
+    if (lowerValue === "good" || lowerValue === "benign") return "text-brand-700 font-medium";
   }
-  return "text-gray-900";
+  return "text-slate-900";
 }
 
 /**
@@ -42,12 +42,12 @@ function getValueColorClass(key: string, value: unknown): string {
 function renderValue(key: string, value: unknown): ReactElement {
   // Null/undefined
   if (value === null || value === undefined) {
-    return <span className="text-gray-400 italic">N/A</span>;
+    return <span className="text-slate-400 italic">N/A</span>;
   }
 
   // Boolean
   if (typeof value === "boolean") {
-    return <span className="text-gray-900">{value ? "Yes" : "No"}</span>;
+    return <span className="text-slate-900">{value ? "Yes" : "No"}</span>;
   }
 
   // Number or String
@@ -56,7 +56,7 @@ function renderValue(key: string, value: unknown): ReactElement {
     const colorClass = getValueColorClass(key, value);
 
     if (shouldHighlight(key)) {
-      return <span className="rounded bg-purple-100 px-2 py-0.5 font-bold text-purple-800">{stringValue}</span>;
+      return <span className="rounded-full bg-violet-100 px-2 py-0.5 font-bold text-violet-800">{stringValue}</span>;
     }
 
     return <span className={colorClass}>{stringValue}</span>;
@@ -65,7 +65,7 @@ function renderValue(key: string, value: unknown): ReactElement {
   // Array - render as comma-separated list
   if (Array.isArray(value)) {
     return (
-      <span className="text-gray-900">
+      <span className="text-slate-900">
         {value.map((item, idx) => (
           <span key={idx}>
             {idx > 0 && ", "}
@@ -82,7 +82,7 @@ function renderValue(key: string, value: unknown): ReactElement {
   }
 
   // Fallback
-  return <span className="text-gray-900">{String(value)}</span>;
+  return <span className="text-slate-900">{String(value)}</span>;
 }
 
 /**
@@ -94,7 +94,7 @@ function TemplateDataRenderer({ data, nested = false }: { data: Record<string, u
   if (entries.length === 0) return null;
 
   return (
-    <div className={`${nested ? "ml-4 mt-2 border-l-2 border-purple-200 pl-3" : "grid grid-cols-2 gap-2"} text-sm`}>
+    <div className={`${nested ? "ml-4 mt-2 border-l-2 border-violet-200 pl-3" : "grid grid-cols-2 gap-2"} text-sm`}>
       {entries.map(([key, value]) => {
         const isLongText = typeof value === "string" && value.length > 60;
         const isSummaryLike = key.toLowerCase().includes("summary") || key.toLowerCase().includes("description");
@@ -104,7 +104,7 @@ function TemplateDataRenderer({ data, nested = false }: { data: Record<string, u
           // Nested rendering - simple key: value format
           return (
             <div key={key} className="mb-1">
-              <span className="font-medium text-gray-700">{formatKey(key)}:</span> {renderValue(key, value)}
+              <span className="font-medium text-slate-700">{formatKey(key)}:</span> {renderValue(key, value)}
             </div>
           );
         }
@@ -113,15 +113,15 @@ function TemplateDataRenderer({ data, nested = false }: { data: Record<string, u
         if (shouldSpanFull) {
           return (
             <div key={key} className="col-span-2">
-              <div className="mb-1 border-t border-purple-200 pt-2 font-medium text-gray-700">{formatKey(key)}:</div>
-              <div className="text-gray-900">{renderValue(key, value)}</div>
+              <div className="mb-1 border-t border-violet-200 pt-2 font-medium text-slate-700">{formatKey(key)}:</div>
+              <div className="text-slate-900">{renderValue(key, value)}</div>
             </div>
           );
         }
 
         return (
           <div key={key} className="contents">
-            <div className="font-medium text-gray-700">{formatKey(key)}:</div>
+            <div className="font-medium text-slate-700">{formatKey(key)}:</div>
             <div>{renderValue(key, value)}</div>
           </div>
         );
@@ -158,15 +158,15 @@ export function WikiContent({ content, className = "" }: WikiContentProps) {
     <div className={className}>
       {/* Template Data */}
       {templateData && Object.keys(templateData).length > 0 && (
-        <div className="mb-4 rounded-lg border border-purple-200 bg-purple-50 p-3">
-          <div className="mb-2 font-semibold text-purple-900">Template Information</div>
+        <div className="mb-4 rounded-xl border border-violet-200 bg-violet-50 p-3">
+          <div className="mb-2 font-semibold text-violet-900">Template Information</div>
           <TemplateDataRenderer data={templateData} />
         </div>
       )}
 
       {/* Remaining Content */}
       {htmlContent && (
-        <div className="prose prose-sm max-w-none text-gray-800" dangerouslySetInnerHTML={{ __html: htmlContent }} />
+        <div className="prose prose-sm max-w-none text-slate-800" dangerouslySetInnerHTML={{ __html: htmlContent }} />
       )}
     </div>
   );

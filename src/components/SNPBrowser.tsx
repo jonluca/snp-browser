@@ -223,58 +223,76 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
 
     const isSelected = selectedSNP?.rsid === snp.rsid;
     return (
-      <div
+      <button
+        type="button"
         className={twMerge(
-          "cursor-pointer border-b border-gray-200 p-3 transition-colors",
-          isSelected ? "bg-blue-50" : "bg-white hover:bg-gray-50",
+          "w-full cursor-pointer rounded-xl border border-transparent p-3 text-left transition-colors",
+          isSelected ? "border-brand-100 bg-brand-50" : "bg-white hover:bg-slate-50",
         )}
         onClick={() => setSelectedSNP(snp)}
       >
         <div className="mb-1">
-          <span className="text-sm font-bold text-gray-900">{snp.rsid.toUpperCase()}</span>
+          <span className="text-sm font-semibold text-slate-900">{snp.rsid.toUpperCase()}</span>
         </div>
         {snp.content && (
-          <div className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-gray-500">
+          <div className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-slate-500">
             {snp.content.substring(0, 100)}...
           </div>
         )}
-      </div>
+      </button>
     );
   };
 
   return (
-    <div className="flex h-full flex-col gap-4">
+    <div className="flex h-full flex-col gap-5">
       {/* Search and Filters */}
-      <div className="rounded border border-gray-300 bg-white p-4 shadow-sm">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-xl font-semibold text-gray-900">Browse SNP Database</h2>
+      <div className="surface-panel p-5 sm:p-6">
+        <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <p className="section-label mb-2">Reference search</p>
+            <h2 className="text-2xl font-semibold tracking-tight text-slate-950">Browse SNP database</h2>
+            <p className="mt-1 text-sm text-slate-500">Search SNPedia records by variant, gene or clinical context.</p>
+          </div>
           {hasActiveFilters && (
-            <button onClick={handleClearFilters} className="text-sm text-blue-600 hover:text-blue-800 hover:underline">
+            <button type="button" onClick={handleClearFilters} className="secondary-button px-3 py-2">
               Clear all filters
             </button>
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {/* General Search */}
           <div className="lg:col-span-3">
-            <label className="mb-1 block text-xs font-medium text-gray-700">Search</label>
+            <label
+              htmlFor="snp-search"
+              className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+            >
+              Search
+            </label>
             <input
+              id="snp-search"
               type="text"
+              aria-label="Search SNP database"
               placeholder="Search by rsid, gene, disease, or content..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="field-control"
             />
           </div>
 
           {/* Chromosome */}
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">Chromosome</label>
+            <label
+              htmlFor="snp-chromosome"
+              className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+            >
+              Chromosome
+            </label>
             <select
+              id="snp-chromosome"
               value={chromosome}
               onChange={(e) => setChromosome(e.target.value)}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="field-control"
             >
               <option value="">All</option>
               {CHROMOSOMES.map((chr) => (
@@ -287,23 +305,36 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
 
           {/* Gene */}
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">Gene</label>
+            <label
+              htmlFor="snp-gene"
+              className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+            >
+              Gene
+            </label>
             <input
+              id="snp-gene"
               type="text"
+              aria-label="Filter by gene"
               placeholder="e.g. BRCA1"
               value={gene}
               onChange={(e) => setGene(e.target.value)}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="field-control"
             />
           </div>
 
           {/* Clinical Significance */}
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-700">Clinical Significance</label>
+            <label
+              htmlFor="snp-clinical-significance"
+              className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+            >
+              Clinical significance
+            </label>
             <select
+              id="snp-clinical-significance"
               value={clinicalSignificance}
               onChange={(e) => setClinicalSignificance(e.target.value)}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="field-control"
             >
               <option value="">All</option>
               {CLINICAL_SIGNIFICANCE_OPTIONS.map((sig) => (
@@ -316,20 +347,27 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
 
           {/* Disease */}
           <div className="lg:col-span-2">
-            <label className="mb-1 block text-xs font-medium text-gray-700">Disease</label>
+            <label
+              htmlFor="snp-disease"
+              className="mb-2 block text-xs font-semibold uppercase tracking-wide text-slate-500"
+            >
+              Disease
+            </label>
             <input
+              id="snp-disease"
               type="text"
+              aria-label="Filter by disease"
               placeholder="e.g. diabetes, cancer..."
               value={disease}
               onChange={(e) => setDisease(e.target.value)}
-              className="w-full rounded border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="field-control"
             />
           </div>
         </div>
 
         {/* Results count */}
-        <div className="mt-3 flex items-center justify-between gap-3">
-          <div className="text-sm text-gray-600">
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+          <div className="text-sm text-slate-500">
             {isSearching ? (
               "Searching..."
             ) : (
@@ -344,12 +382,7 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
             type="button"
             onClick={() => void handleExportResults()}
             disabled={isSearching || isExporting || total === 0}
-            className={twMerge(
-              "rounded bg-blue-500 px-3 py-2 text-sm font-medium text-white transition-colors",
-              isSearching || isExporting || total === 0
-                ? "cursor-not-allowed opacity-50"
-                : "cursor-pointer hover:bg-blue-600",
-            )}
+            className="primary-button"
           >
             {isExporting ? "Exporting..." : "Export CSV"}
           </button>
@@ -357,11 +390,11 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
       </div>
 
       {/* Results area */}
-      <div className="flex min-h-0 flex-1 gap-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4 lg:flex-row">
         {/* Left panel - List of results */}
-        <div className="w-[400px] flex-shrink-0 overflow-hidden rounded border border-gray-300">
+        <div className="surface-panel h-[360px] flex-shrink-0 overflow-hidden p-2 lg:h-[640px] lg:w-[390px]">
           <Virtuoso
-            style={{ height: "600px" }}
+            style={{ height: "100%" }}
             totalCount={results.length}
             itemContent={itemContent}
             endReached={hasMoreResults ? loadMoreResults : undefined}
@@ -369,21 +402,36 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
         </div>
 
         {/* Right panel - Selected SNP details */}
-        <div className="flex-1 overflow-y-auto rounded border border-gray-300 bg-gray-50 p-4">
+        <div className="surface-panel min-h-[320px] flex-1 overflow-y-auto p-5 sm:p-6 lg:h-[640px]">
           {selectedSNP ? (
             <div>
-              <h3 className="mt-0 text-2xl font-bold text-gray-900">{selectedSNP.rsid.toUpperCase()}</h3>
+              <p className="section-label mb-2">Variant detail</p>
+              <h3 className="mt-0 text-2xl font-semibold tracking-tight text-slate-950">
+                {selectedSNP.rsid.toUpperCase()}
+              </h3>
 
               {/* SNPedia Content */}
               {selectedSNP.content && (
-                <div className="mb-4 rounded bg-white p-3 shadow-sm">
-                  <h4 className="mb-2 text-sm font-semibold text-gray-800">SNPedia Information</h4>
+                <div className="subtle-panel mt-5 p-4">
+                  <h4 className="mb-3 text-sm font-semibold text-slate-800">SNPedia information</h4>
                   <WikiContent content={selectedSNP.content} />
                 </div>
               )}
             </div>
           ) : (
-            <div className="mt-24 text-center text-gray-400">Select a SNP from the list to view details</div>
+            <div className="flex min-h-[280px] flex-col items-center justify-center text-center text-slate-400">
+              <div className="mb-4 flex size-12 items-center justify-center rounded-2xl bg-slate-50 text-slate-400">
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 24 24"
+                  className="size-6 fill-none stroke-current"
+                  strokeWidth="1.7"
+                >
+                  <path d="M11 19a8 8 0 1 1 5.3-14M16 16l5 5" strokeLinecap="round" />
+                </svg>
+              </div>
+              <p className="text-sm font-medium text-slate-500">Select a SNP to view its details</p>
+            </div>
           )}
         </div>
       </div>
