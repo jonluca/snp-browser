@@ -150,3 +150,15 @@ chr1\t10642\t.\tG\tA\t.\tPASS\t.\tGT\t1/1`;
   expect(result.genotypes).toEqual([]);
   expect(result.skippedLines).toBe(result.totalLines);
 });
+
+test("VCF parser skips sample records whose FORMAT has no GT field", async () => {
+  const content = `##fileformat=VCFv4.2
+#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE
+1\t100\trs123\tA\tG\t.\tPASS\t.\tDP:GQ\t0:99`;
+
+  const result = await parserVCF.parse(content, () => undefined);
+
+  expect(result.errors).toEqual([]);
+  expect(result.genotypes).toEqual([]);
+  expect(result.skippedLines).toBe(result.totalLines);
+});

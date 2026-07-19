@@ -484,7 +484,8 @@ export class ParserVCF implements DNAParser {
     const formatFields = format.split(":");
     const sampleFields = sample.split(":");
     const genotypeIndex = formatFields.indexOf("GT");
-    const genotypeField = genotypeIndex >= 0 ? sampleFields[genotypeIndex] : sampleFields[0];
+    if (genotypeIndex < 0) return { status: "unsupported" };
+    const genotypeField = sampleFields[genotypeIndex];
 
     if (!genotypeField) return { status: "invalid" };
 

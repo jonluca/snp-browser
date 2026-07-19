@@ -35,6 +35,7 @@ export class ParserFTDNA implements DNAParser {
     let hasRsidData = false;
     let validDataLines = 0;
     let hasQuotedValues = false;
+    let hasFTDNACSVShape = false;
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -55,6 +56,9 @@ export class ParserFTDNA implements DNAParser {
       const upper = trimmed.toUpperCase();
       if (upper.includes("RSID") && upper.includes("CHROMOSOME") && upper.includes("RESULT")) {
         hasCSVHeader = true;
+        if (/^RSID,"CHROMOSOME","POSITION","RESULT"(?:,|$)/i.test(trimmed)) {
+          hasFTDNACSVShape = true;
+        }
         // FTDNA often uses quoted column names
         if (trimmed.includes('"')) {
           hasQuotedValues = true;
@@ -68,6 +72,9 @@ export class ParserFTDNA implements DNAParser {
       if (parts.length >= 4 && /^(rs|i)\d+/i.test(parts[0])) {
         hasRsidData = true;
         validDataLines++;
+        if (/^(?:rs|i)\d+,"/i.test(trimmed)) {
+          hasFTDNACSVShape = true;
+        }
 
         // Validate FTDNA CSV format
         const [rsid, chromosome, position, result] = parts;
@@ -89,6 +96,7 @@ export class ParserFTDNA implements DNAParser {
     if (hasCSVHeader) confidence += 0.3;
     if (hasFTDNAHeader) confidence += 0.4;
     if (hasQuotedValues) confidence += 0.2;
+    if (hasFTDNACSVShape) confidence += 0.3;
     if (hasRsidData && validDataLines >= 3) confidence += 0.1;
 
     const valid = hasCSVHeader && hasRsidData;
