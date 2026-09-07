@@ -39,6 +39,8 @@ function App() {
   const [dbError, setDbError] = useState<Error | null>(null);
   const [dbStats, setDbStats] = useState<{ totalSNPs: number } | null>(null);
 
+  const [fileName, setFileName] = useState<string | null>(null);
+  const processingRef = useRef(false);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [detectedFormat, setDetectedFormat] = useState<string | null>(null);
   const [isParsing, setIsParsing] = useState(false);
@@ -51,6 +53,7 @@ function App() {
   // Refs for direct DOM manipulation of progress bar (shared across all operations)
   const progressBarRef = useRef<HTMLDivElement>(null);
   const progressTextRef = useRef<HTMLParagraphElement>(null);
+  const progressPhaseRef = useRef<"database" | "parse" | "snps" | "genosets" | null>("database");
   const dbLoadProgressRef = useRef(0);
   const dbLoadPromiseRef = useRef<Promise<void> | null>(null);
 
@@ -61,6 +64,7 @@ function App() {
   // Load database when worker is ready
   useEffect(() => {
     if (!isWorkerReady || !workerApi) return;
+    let isCurrent = true;
 
     async function loadDB() {
       if (!workerApi) return;
@@ -73,11 +77,13 @@ function App() {
         await workerApi.loadDatabase(
           DB_URL,
           proxy((progress: number) => {
+            if (!isCurrent) return;
             const roundedProgress = Math.round(progress);
             if (dbLoadProgressRef.current !== roundedProgress) {
               dbLoadProgressRef.current = roundedProgress;
               setDbLoadProgress(roundedProgress);
             }
+            if (progressPhaseRef.current !== "database") return;
             if (progressBarRef.current) {
               progressBarRef.current.style.width = `${progress}%`;
             }
@@ -89,6 +95,7 @@ function App() {
 
         // Get database stats
         const stats = await workerApi.getDatabaseStats();
+        if (!isCurrent) return;
         setDbStats(stats);
 
         setDbLoadProgress(100);
@@ -96,8 +103,10 @@ function App() {
       } catch (err) {
         console.error("Error loading database:", err);
         const databaseError = err instanceof Error ? err : new Error("Failed to load database");
-        setDbError(databaseError);
-        setIsDbLoading(false);
+        if (isCurrent) {
+          setDbError(databaseError);
+          setIsDbLoading(false);
+        }
         throw databaseError;
       }
     }
@@ -105,14 +114,20 @@ function App() {
     const loadPromise = loadDB();
     dbLoadPromiseRef.current = loadPromise;
     void loadPromise.catch(() => undefined);
+    return () => {
+      isCurrent = false;
+    };
   }, [isWorkerReady, workerApi]);
 
   const handleFileSelect = useCallback(
     async (file: File) => {
-      if (!workerApi || !parserWorkerApi) return;
+      if (!workerApi || !parserWorkerApi || processingRef.current) return;
+      processingRef.current = true;
+      setFileName(file.name);
 
       try {
         // Parse file in worker thread with progress reporting
+        progressPhaseRef.current = "parse";
         setIsParsing(true);
         setMatchError(null);
 
@@ -122,6 +137,7 @@ function App() {
           ? await parserWorkerApi.parseFileBlob(
               file,
               proxy((current: number, total: number) => {
+                if (progressPhaseRef.current !== "parse") return;
                 const progress = total > 0 ? (current / total) * 100 : 0;
                 if (progressBarRef.current) {
                   progressBarRef.current.style.width = `${progress}%`;
@@ -136,6 +152,7 @@ function App() {
           : await parserWorkerApi.parseFile(
               await file.text(),
               proxy((current: number, total: number) => {
+                if (progressPhaseRef.current !== "parse") return;
                 const progress = total > 0 ? (current / total) * 100 : 0;
                 if (progressBarRef.current) {
                   progressBarRef.current.style.width = `${progress}%`;
@@ -161,13 +178,16 @@ function App() {
         // Match SNPs using worker
         setIsMatching(true);
 
+        progressPhaseRef.current = "database";
         if (dbLoadPromiseRef.current) {
           await dbLoadPromiseRef.current;
         }
 
+        progressPhaseRef.current = "snps";
         const matchedSNPs = await workerApi.matchSNPs(
           result.genotypes,
           proxy((current: number, total: number) => {
+            if (progressPhaseRef.current !== "snps") return;
             const progress = total > 0 ? (current / total) * 100 : 0;
             if (progressBarRef.current) {
               progressBarRef.current.style.width = `${progress}%`;
@@ -184,9 +204,11 @@ function App() {
         // Match genosets
         setIsMatchingGenosets(true);
 
+        progressPhaseRef.current = "genosets";
         const matchedGenosets = await workerApi.matchGenosets(
           matchedSNPs,
           proxy((current: number, total: number) => {
+            if (progressPhaseRef.current !== "genosets") return;
             const progress = total > 0 ? (current / total) * 100 : 0;
             if (progressBarRef.current) {
               progressBarRef.current.style.width = `${progress}%`;
@@ -197,21 +219,24 @@ function App() {
           }),
         );
 
+        progressPhaseRef.current = null;
         setGenosets(matchedGenosets);
         setIsMatchingGenosets(false);
       } catch (err) {
+        progressPhaseRef.current = null;
         console.error("Error processing file:", err);
         setMatchError(err instanceof Error ? err : new Error("Unknown error"));
         setIsParsing(false);
         setIsMatching(false);
         setIsMatchingGenosets(false);
-        alert(err instanceof Error ? err.message : "Unknown error");
       }
+      processingRef.current = false;
     },
     [parserWorkerApi, workerApi],
   );
 
   const handleReset = useCallback(() => {
+    setFileName(null);
     setParseResult(null);
     setDetectedFormat(null);
     setMatches(null);
@@ -221,314 +246,305 @@ function App() {
   }, []);
 
   // Determine app state
-  const hasResults = matches && matches.length >= 0 && genosets !== null;
-  const error = dbError || matchError || workerError || parserWorkerError;
+  const hasResults = matches !== null && genosets !== null;
+  const error = dbError || workerError || parserWorkerError || (mode === "upload" ? matchError : null);
   const hasError = Boolean(error);
   const isDatabaseReady = Boolean(dbStats) && !isDbLoading && !dbError;
   const isProcessing = isParsing || isMatching || isMatchingGenosets;
   const isWaitingForDatabase = isMatching && !isDatabaseReady;
   const canUpload =
-    Boolean(parserWorkerApi) && Boolean(workerApi) && isParserWorkerReady && isWorkerReady && !isProcessing;
-  const isLandingView = mode === "upload" && !hasError && !hasResults && !isProcessing;
+    Boolean(parserWorkerApi) &&
+    Boolean(workerApi) &&
+    isParserWorkerReady &&
+    isWorkerReady &&
+    !isProcessing &&
+    !dbError &&
+    !workerError &&
+    !parserWorkerError;
+  const isLandingView = mode === "upload" && !hasResults && !isProcessing;
   const databaseStatus = isDatabaseReady
     ? `${dbStats?.totalSNPs.toLocaleString()} SNPs ready`
     : isDbLoading && !dbError
       ? `Preparing database - ${dbLoadProgress}%`
       : "Database unavailable";
 
-  return (
-    <div className="relative min-h-screen overflow-hidden">
-      <div className="pointer-events-none absolute -left-40 top-32 size-96 rounded-full bg-brand-100/60 blur-3xl" />
-      <div className="pointer-events-none absolute -right-40 top-0 size-96 rounded-full bg-teal-100/50 blur-3xl" />
-      <main className="relative mx-auto max-w-7xl px-4 py-5 sm:px-6 sm:py-8 lg:px-8">
-        <header
-          className={twMerge(
-            "surface-panel mb-6 overflow-hidden bg-white/75 backdrop-blur",
-            isLandingView ? "p-5 sm:p-8" : "p-4 sm:px-6 sm:py-5",
-          )}
-        >
-          <div
-            className={twMerge(
-              "flex flex-col lg:flex-row lg:justify-between",
-              isLandingView ? "gap-7 lg:items-end" : "gap-4 lg:items-center",
-            )}
-          >
-            <div className={twMerge(isLandingView && "max-w-3xl")}>
-              <div className={twMerge("flex flex-wrap items-center gap-3", isLandingView && "mb-6")}>
-                <div className="flex size-11 items-center justify-center rounded-2xl bg-brand-600 text-white shadow-sm">
-                  <svg
-                    aria-hidden="true"
-                    viewBox="0 0 24 24"
-                    className="size-6 fill-none stroke-current"
-                    strokeWidth="1.8"
-                  >
-                    <path d="M7 3c10 4 0 14 10 18M17 3C7 7 17 17 7 21" strokeLinecap="round" />
-                    <path d="M8.5 7h7M7.5 12h9M8.5 17h7" strokeLinecap="round" />
-                  </svg>
-                </div>
-                <span className="text-lg font-semibold tracking-tight text-slate-900">SNP Browser</span>
-                <span className="rounded-full bg-brand-50 px-3 py-1 text-xs font-semibold text-brand-700">
-                  Private analysis
-                </span>
-              </div>
-              {isLandingView && (
-                <>
-                  <h1 className="max-w-2xl text-3xl font-semibold tracking-tight text-slate-950 sm:text-5xl">
-                    Explore genetic variants without sending your DNA anywhere.
-                  </h1>
-                  <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600 sm:text-lg">
-                    Match raw DNA exports with SNPedia insights or browse the reference database directly. Processing
-                    stays inside your browser.
-                  </p>
-                </>
-              )}
-            </div>
+  const processingStage = isParsing ? 0 : isMatching ? 1 : 2;
+  const processingTitle = isParsing
+    ? "Reading your DNA file"
+    : isMatching
+      ? isWaitingForDatabase
+        ? "Preparing the reference database"
+        : "Finding your SNPedia matches"
+      : "Checking related genosets";
+  const processingDetail = isParsing
+    ? "Detecting the format and reading your genotype records."
+    : isMatching
+      ? `${parseResult?.genotypes.length.toLocaleString() ?? "0"} variants read. ${isWaitingForDatabase ? "Matching will start automatically." : "Comparing your genotypes with reference annotations."}`
+      : `Looking for combinations across ${matches?.length.toLocaleString() ?? "0"} matched variants.`;
 
-            <div
-              className={twMerge(
-                "flex shrink-0",
-                isLandingView ? "flex-col items-start gap-4 lg:items-end" : "flex-wrap items-center gap-3",
-              )}
-            >
-              <div
+  return (
+    <div className="min-h-screen">
+      <a href="#main-content" className="skip-link">
+        Skip to workspace
+      </a>
+      <header className="border-b border-slate-200/80 bg-white/80">
+        <div className="mx-auto flex max-w-[1440px] flex-wrap items-center justify-between gap-x-6 gap-y-4 px-4 py-4 sm:px-6 lg:px-9">
+          <button
+            type="button"
+            onClick={() => setMode("upload")}
+            disabled={isProcessing}
+            className="flex shrink-0 cursor-pointer items-center gap-3 rounded-md text-slate-950 disabled:cursor-wait"
+            aria-label="SNP Browser home"
+          >
+            <span className="flex size-9 items-center justify-center rounded-lg bg-brand-700 text-white">
+              <svg aria-hidden="true" viewBox="0 0 24 24" className="size-5 fill-none stroke-current" strokeWidth="1.6">
+                <path d="M7 3c10 4 0 14 10 18M17 3C7 7 17 17 7 21M8.5 7h7M7.5 12h9M8.5 17h7" strokeLinecap="round" />
+              </svg>
+            </span>
+            <span className="text-lg font-semibold tracking-tight">SNP Browser</span>
+          </button>
+          <nav
+            aria-label="Workspace view"
+            className="order-3 flex w-full gap-1 rounded-lg bg-slate-100/80 p-1 sm:order-2 sm:w-auto"
+          >
+            {(["upload", "browse"] as const).map((view) => (
+              <button
+                key={view}
+                type="button"
+                onClick={() => setMode(view)}
+                disabled={isProcessing}
+                aria-current={mode === view ? "page" : undefined}
                 className={twMerge(
-                  "flex items-center gap-2 rounded-full border px-3.5 py-2 text-sm font-medium",
-                  isDatabaseReady
-                    ? "border-brand-100 bg-brand-50 text-brand-700"
-                    : dbError
-                      ? "border-red-100 bg-red-50 text-red-700"
-                      : "border-amber-100 bg-amber-50 text-amber-700",
+                  "flex-1 cursor-pointer rounded-md px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors disabled:cursor-wait disabled:opacity-50 sm:flex-none",
+                  mode === view
+                    ? "bg-white text-brand-700 shadow-sm ring-1 ring-slate-200/60"
+                    : "text-slate-500 hover:text-slate-900",
                 )}
               >
-                <span
-                  className={twMerge(
-                    "size-2 rounded-full",
-                    isDatabaseReady ? "bg-brand-500" : dbError ? "bg-red-500" : "animate-pulse bg-amber-500",
-                  )}
-                />
-                {databaseStatus}
-              </div>
+                {view === "upload" ? (hasResults ? "Your analysis" : "Analyze file") : "Browse reference"}
+              </button>
+            ))}
+          </nav>
+          <div className="order-2 flex items-center gap-2 text-xs text-slate-500 sm:order-3" role="status">
+            <span
+              className={twMerge(
+                "size-1.5 shrink-0 rounded-full",
+                isDatabaseReady ? "bg-brand-500" : dbError ? "bg-red-500" : "animate-pulse bg-amber-500",
+              )}
+            />
+            {databaseStatus}
+          </div>
+        </div>
+      </header>
 
-              {!hasError && !hasResults && !isProcessing && (
-                <nav
-                  aria-label="Workspace view"
-                  className="inline-flex gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm"
-                >
-                  <button
-                    type="button"
-                    onClick={() => setMode("upload")}
-                    className={twMerge(
-                      "cursor-pointer rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
-                      mode === "upload" ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-50",
-                    )}
-                  >
-                    Analyze file
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMode("browse")}
-                    disabled={!isDatabaseReady}
-                    title={isDatabaseReady ? undefined : "Database is still loading"}
-                    className={twMerge(
-                      "cursor-pointer rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors",
-                      mode === "browse" ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-50",
-                      !isDatabaseReady && "cursor-not-allowed opacity-45 hover:bg-transparent",
-                    )}
-                  >
-                    Browse database
-                  </button>
-                </nav>
+      <main id="main-content" className="mx-auto max-w-[1440px] px-4 pb-8 pt-6 sm:px-6 lg:px-9">
+        {hasError && (
+          <div
+            role="alert"
+            className="mb-6 flex flex-col gap-3 rounded-xl border border-red-200 bg-red-50 px-5 py-4 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div>
+              <h2 className="text-sm font-semibold text-red-950">
+                {dbError || workerError || parserWorkerError
+                  ? "The workspace could not finish loading"
+                  : "We couldn't read this file"}
+              </h2>
+              <p className="mt-1 text-sm leading-6 text-red-800">{error?.message || "An unknown error occurred"}</p>
+              {!dbError && !workerError && !parserWorkerError && (
+                <p className="mt-1 text-sm text-red-700">Try another supported DNA export below.</p>
               )}
             </div>
-          </div>
-        </header>
-
-        {/* Error */}
-        {hasError && (
-          <div className="mb-6 flex gap-4 rounded-2xl border border-red-200 bg-red-50 p-5 sm:items-center">
-            <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-700">
-              <svg aria-hidden="true" viewBox="0 0 24 24" className="size-6 fill-none stroke-current" strokeWidth="1.8">
-                <path d="M12 8v5m0 3h.01M12 3.5 2.7 20h18.6L12 3.5Z" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-            <div>
-              <h2 className="font-semibold text-red-950">Something stopped the analysis</h2>
-              <p className="mt-1 text-sm text-red-700">{error?.message || "An unknown error occurred"}</p>
-              <p className="mt-1 text-sm text-slate-600">Choose another file below to try again.</p>
-            </div>
-          </div>
-        )}
-
-        {/* Main content area */}
-        {!hasResults && !isParsing && !isMatching && !isMatchingGenosets && (
-          <>
-            {mode === "browse" &&
-              !hasError &&
-              (isDatabaseReady && workerApi ? (
-                <SNPBrowser workerApi={workerApi} />
-              ) : (
-                <div className="surface-panel px-6 py-14 text-center">
-                  <p className="section-label mb-3">Reference database</p>
-                  <h2 className="mb-5 text-2xl font-semibold tracking-tight text-slate-900">Preparing SNPedia data</h2>
-                  <div className="mx-auto mb-4 h-2.5 w-full max-w-md overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      ref={progressBarRef}
-                      className="h-full rounded-full bg-brand-500 transition-all duration-300"
-                      style={{ width: `${dbLoadProgress}%` }}
-                    />
-                  </div>
-                  <p ref={progressTextRef} className="text-sm text-slate-500">
-                    {dbLoadProgress}% complete
-                  </p>
-                </div>
-              ))}
-            {(mode === "upload" || hasError) && (
-              <section className="grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
-                <div className="order-1 space-y-3 lg:order-2">
-                  <FileUpload onFileSelect={handleFileSelect} disabled={!canUpload} />
-                  {isDbLoading && (
-                    <div className="subtle-panel flex items-center gap-3 px-4 py-3 text-sm text-slate-600">
-                      <span className="size-2 shrink-0 animate-pulse rounded-full bg-amber-500" />
-                      Reference data is loading in the background. Matching starts as soon as it is ready.
-                    </div>
-                  )}
-                </div>
-                <aside className="surface-panel order-2 flex flex-col justify-between p-6 sm:p-8 lg:order-1">
-                  <div>
-                    <p className="section-label">Your workspace</p>
-                    <h2 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">
-                      From raw export to interpretable matches.
-                    </h2>
-                    <p className="mt-3 text-sm leading-6 text-slate-600">
-                      Bring an export from your DNA provider. SNP Browser detects the format, matches SNPs and finds
-                      relevant genosets.
-                    </p>
-                    <ol className="mt-8 space-y-5">
-                      {[
-                        ["01", "Choose a DNA export", "Common provider files, VCF and ZIP archives are supported."],
-                        ["02", "Match locally", "Analysis runs in this tab using the SNPedia reference."],
-                        ["03", "Explore findings", "Review SNPs and genosets, then export useful results."],
-                      ].map(([step, title, detail]) => (
-                        <li key={step} className="flex gap-4">
-                          <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-700">
-                            {step}
-                          </span>
-                          <div>
-                            <p className="text-sm font-semibold text-slate-900">{title}</p>
-                            <p className="mt-1 text-sm leading-5 text-slate-500">{detail}</p>
-                          </div>
-                        </li>
-                      ))}
-                    </ol>
-                  </div>
-                  <div className="mt-9 rounded-2xl border border-brand-100 bg-brand-50 p-4">
-                    <p className="text-sm font-semibold text-brand-700">Privacy built in</p>
-                    <p className="mt-1 text-sm leading-5 text-slate-600">
-                      Your genetic file remains on this device and is never uploaded to a server.
-                    </p>
-                  </div>
-                </aside>
-              </section>
+            {(dbError || workerError || parserWorkerError) && (
+              <button type="button" className="secondary-button shrink-0" onClick={() => window.location.reload()}>
+                Reload workspace
+              </button>
             )}
-          </>
-        )}
-
-        {/* Parsing file */}
-        {isParsing && (
-          <div className="surface-panel px-6 py-14 text-center">
-            <p className="section-label mb-3">Step 1 of 3</p>
-            <h2 className="mb-3 text-2xl font-semibold tracking-tight text-slate-900">Reading your DNA file</h2>
-            <p className="mx-auto mb-7 max-w-lg text-sm text-slate-500">
-              Detecting its format and extracting genotype records.
-            </p>
-            <div className="mx-auto mb-4 h-2.5 w-full max-w-md overflow-hidden rounded-full bg-slate-100">
-              <div
-                ref={progressBarRef}
-                className="h-full rounded-full bg-brand-500 transition-all duration-300"
-                style={{ width: "0%" }}
-              />
-            </div>
-            <p ref={progressTextRef} className="text-sm text-slate-500">
-              0 / 0 lines processed
-            </p>
           </div>
         )}
 
-        {/* Matching SNPs */}
-        {isMatching && (
-          <div className="surface-panel px-6 py-14 text-center">
-            <p className="section-label mb-3">Step 2 of 3</p>
-            <h2 className="mb-3 text-2xl font-semibold tracking-tight text-slate-900">
-              {isWaitingForDatabase ? "Preparing SNP database..." : "Matching SNPs with database..."}
-            </h2>
-            {parseResult && (
-              <p className="mx-auto mb-7 max-w-lg text-sm text-slate-500">
-                Found {parseResult.genotypes.length.toLocaleString()} SNPs in your file
+        {mode === "browse" &&
+          !isProcessing &&
+          (isDatabaseReady && workerApi ? (
+            <SNPBrowser workerApi={workerApi} />
+          ) : !hasError ? (
+            <section className="surface-panel px-6 py-20 text-center" aria-busy="true">
+              <p className="section-label mb-3">Reference database</p>
+              <h1 className="mb-3 text-2xl font-semibold tracking-tight text-slate-900">Preparing SNPedia data</h1>
+              <p className="mb-7 text-sm text-slate-500">
+                The reference downloads once for this session. You can start a file analysis while it loads.
+              </p>
+              <div className="mx-auto mb-4 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-slate-100">
+                <div
+                  ref={progressBarRef}
+                  className="h-full rounded-full bg-brand-500 transition-[width] duration-300"
+                  style={{ width: `${dbLoadProgress}%` }}
+                />
+              </div>
+              <p ref={progressTextRef} className="text-sm tabular-nums text-slate-500">
+                {dbLoadProgress}% complete
+              </p>
+            </section>
+          ) : null)}
+
+        {isLandingView && (
+          <section className="grid items-center gap-8 py-5 lg:min-h-[660px] lg:grid-cols-[1fr_1.05fr] lg:gap-14 lg:py-12 xl:gap-20">
+            <div className="max-w-xl">
+              <p className="section-label mb-5">Your DNA, in context</p>
+              <h1 className="text-4xl font-semibold leading-[1.08] tracking-[-0.04em] text-slate-950 sm:text-5xl xl:text-6xl">
+                A clearer view of your genetic data.
+              </h1>
+              <p className="mt-6 max-w-lg text-base leading-7 text-slate-600 sm:text-lg">
+                Connect your raw DNA export to SNPedia. Explore individual variants, discover related genosets, and keep
+                the findings that matter to you.
+              </p>
+              <div className="my-8 h-px w-14 bg-brand-500" />
+              <ol className="space-y-5">
+                {[
+                  ["01", "Bring your DNA export", "Common provider files, VCF and ZIP archives."],
+                  ["02", "Find your matches", "Your genotypes, connected to reference annotations."],
+                  ["03", "Explore at your pace", "Search, filter, read the source, and export results."],
+                ].map(([step, title, detail]) => (
+                  <li key={step} className="flex gap-4">
+                    <span className="pt-0.5 font-mono text-xs text-brand-700">{step}</span>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">{title}</p>
+                      <p className="mt-1 text-sm leading-5 text-slate-500">{detail}</p>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <button
+                type="button"
+                onClick={() => setMode("browse")}
+                className="mt-8 inline-flex cursor-pointer items-center gap-2 rounded-md text-sm font-semibold text-brand-700 hover:text-brand-600"
+              >
+                Explore the reference without a file <span aria-hidden="true">→</span>
+              </button>
+            </div>
+            <div className="space-y-4">
+              <FileUpload onFileSelect={handleFileSelect} disabled={!canUpload} />
+              <div className="flex items-start gap-2.5 px-1 text-xs leading-5 text-slate-500">
+                <svg
+                  aria-hidden="true"
+                  viewBox="0 0 20 20"
+                  className="mt-0.5 size-4 shrink-0 fill-none stroke-brand-700"
+                  strokeWidth="1.5"
+                >
+                  <path d="m10 2 6 2v5c0 4-6 7-6 7S4 13 4 9V4l6-2Z" strokeLinejoin="round" />
+                  <path d="m7 9 2 2 4-4" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <p>
+                  <span className="font-semibold text-slate-700">Your file stays yours.</span> All genetic data is
+                  processed on this device. No account or upload required.
+                </p>
+              </div>
+              {isDbLoading && (
+                <p className="px-1 text-xs leading-5 text-slate-500">
+                  Reference data is loading in the background. You can choose your file now.
+                </p>
+              )}
+            </div>
+          </section>
+        )}
+
+        {isProcessing && (
+          <section
+            key={processingStage}
+            className="surface-panel mx-auto my-8 max-w-3xl px-6 py-12 text-center sm:px-12 sm:py-16"
+            aria-busy="true"
+          >
+            <div className="mb-8 flex justify-center gap-3" aria-label={`Analysis step ${processingStage + 1} of 3`}>
+              {["Read file", "Match variants", "Find genosets"].map((label, index) => (
+                <span
+                  key={label}
+                  className={twMerge(
+                    "flex items-center gap-2 text-xs",
+                    index <= processingStage ? "text-brand-700" : "text-slate-400",
+                  )}
+                >
+                  <span
+                    className={twMerge(
+                      "flex size-6 items-center justify-center rounded-full text-[11px] font-semibold",
+                      index <= processingStage ? "bg-brand-100" : "bg-slate-100",
+                    )}
+                  >
+                    {index < processingStage ? "✓" : index + 1}
+                  </span>
+                  <span className="hidden sm:inline">{label}</span>
+                </span>
+              ))}
+            </div>
+            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">{processingTitle}</h1>
+            {fileName && (
+              <p className="mt-2 truncate text-sm font-medium text-slate-700" title={fileName}>
+                {fileName}
               </p>
             )}
-            <div className="mx-auto mb-4 h-2.5 w-full max-w-md overflow-hidden rounded-full bg-slate-100">
+            <p className="mx-auto mb-8 mt-3 max-w-lg text-sm leading-6 text-slate-500">{processingDetail}</p>
+            <div className="mx-auto mb-4 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-slate-100">
               <div
                 ref={progressBarRef}
-                className="h-full rounded-full bg-brand-500 transition-all duration-300"
+                className="h-full rounded-full bg-brand-500 transition-[width] duration-200"
                 style={{ width: isWaitingForDatabase ? `${dbLoadProgress}%` : "0%" }}
               />
             </div>
-            <p ref={progressTextRef} className="text-sm text-slate-500">
-              {isWaitingForDatabase ? `${dbLoadProgress}% complete` : "0 / 0 SNPs processed"}
+            <p ref={progressTextRef} className="text-xs tabular-nums text-slate-500">
+              {isWaitingForDatabase ? `${dbLoadProgress}% complete` : "Starting…"}
             </p>
-          </div>
+            <p className="mt-9 text-xs text-slate-400">Keep this tab open while your file is processed locally.</p>
+          </section>
         )}
 
-        {/* Matching Genosets */}
-        {isMatchingGenosets && (
-          <div className="surface-panel px-6 py-14 text-center">
-            <p className="section-label mb-3">Step 3 of 3</p>
-            <h2 className="mb-3 text-2xl font-semibold tracking-tight text-slate-900">Finding matching genosets</h2>
-            {matches && (
-              <p className="mx-auto mb-7 max-w-lg text-sm text-slate-500">
-                Checking genosets against {matches.length.toLocaleString()} matched SNPs
-              </p>
-            )}
-            <div className="mx-auto mb-4 h-2.5 w-full max-w-md overflow-hidden rounded-full bg-slate-100">
-              <div
-                ref={progressBarRef}
-                className="h-full rounded-full bg-brand-500 transition-all duration-300"
-                style={{ width: "0%" }}
-              />
-            </div>
-            <p ref={progressTextRef} className="text-sm text-slate-500">
-              0 / 0 genosets checked
-            </p>
-          </div>
-        )}
-
-        {/* Results */}
-        {hasResults && matches && genosets && !isMatching && !isMatchingGenosets && (
+        {mode === "upload" && hasResults && matches && genosets && !isProcessing && (
           <>
-            <div className="surface-panel mb-5 flex flex-col gap-4 px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
-              <div>
+            <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0">
+                <p className="section-label mb-1.5">Your analysis</p>
+                <h1
+                  className="truncate text-2xl font-semibold tracking-tight text-slate-950"
+                  title={fileName ?? undefined}
+                >
+                  {fileName ?? "DNA analysis"}
+                </h1>
                 {parseResult && (
-                  <div className="space-y-1">
-                    <p className="m-0 text-sm font-medium text-slate-700">
-                      Processed {parseResult.genotypes.length.toLocaleString()} SNPs from your file
-                      {parseResult.errors.length > 0 && ` (${parseResult.errors.length} errors)`}
-                    </p>
+                  <p className="mt-2 text-xs text-slate-500">
+                    {parseResult.genotypes.length.toLocaleString()} variants read
                     {detectedFormat && (
-                      <p className="m-0 text-xs text-slate-500">
-                        Detected format:{" "}
-                        <span className="font-medium capitalize">{detectedFormat.replace("-", " ")}</span>
-                      </p>
+                      <>
+                        {" "}
+                        · <span className="capitalize">{detectedFormat.replaceAll("-", " ")}</span>
+                      </>
                     )}
-                  </div>
+                    {parseResult.errors.length > 0 && (
+                      <> · {parseResult.errors.length.toLocaleString()} parse warnings</>
+                    )}
+                  </p>
                 )}
               </div>
-              <button type="button" onClick={handleReset} className="secondary-button">
+              <button type="button" onClick={handleReset} className="secondary-button shrink-0">
                 Analyze another file
               </button>
             </div>
             <ResultsDisplay matches={matches} genosets={genosets} />
           </>
         )}
+
+        <footer
+          className={twMerge(
+            "mt-8 flex flex-wrap justify-between gap-2 text-[11px] leading-5 text-slate-400",
+            isLandingView && "border-t border-slate-200 pt-5",
+          )}
+        >
+          <span>A private workspace for genetic exploration.</span>
+          <a
+            href="https://www.snpedia.com/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="rounded-sm hover:text-brand-700"
+          >
+            Reference annotations from SNPedia ↗
+          </a>
+        </footer>
       </main>
     </div>
   );

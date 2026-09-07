@@ -1,12 +1,14 @@
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { twMerge } from "tailwind-merge";
 import { Virtuoso } from "react-virtuoso";
 import type { MatchedSNP, MatchedGenoset } from "../types/snp";
 import { buildCsv, downloadCsvFile, type CsvColumn } from "../utils/csvExport";
+import { getVariantPresentation, plainWikiText } from "../utils/variantPresentation";
 import { WikiContent } from "./WikiContent";
 import { GenosetDisplay } from "./GenosetDisplay";
 
 type ViewMode = "snps" | "genosets";
+type SortMode = "magnitude" | "rsid";
 
 interface ResultsDisplayProps {
   matches: MatchedSNP[];
@@ -14,6 +16,16 @@ interface ResultsDisplayProps {
 }
 
 const parsedValue = (value: unknown) => (value === null || value === undefined ? "" : String(value));
+const rsidCollator = new Intl.Collator(undefined, { numeric: true });
+
+function presentMatch(match: MatchedSNP) {
+  const fallback = getVariantPresentation(match.snpData);
+  return {
+    gene: plainWikiText(match.parsedData.geneSymbol ?? fallback.geneSymbol ?? ""),
+    preview: plainWikiText(match.parsedData.summary ?? "") || fallback.preview,
+    repute: plainWikiText(match.parsedData.repute ?? ""),
+  };
+}
 
 const SNP_EXPORT_COLUMNS: CsvColumn<MatchedSNP>[] = [
   { header: "RSID", value: (match) => match.rsid },
@@ -34,222 +46,367 @@ const SNP_EXPORT_COLUMNS: CsvColumn<MatchedSNP>[] = [
 export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("snps");
   const [searchTerm, setSearchTerm] = useState("");
-  const [selectedSNP, setSelectedSNP] = useState<MatchedSNP | null>(null);
-  const [onlyWithGenotype, setOnlyWithGenotype] = useState(true); // Filter by default
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [onlyWithGenotype, setOnlyWithGenotype] = useState(true);
+  const [sortMode, setSortMode] = useState<SortMode>("magnitude");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const detailRef = useRef<HTMLHeadingElement>(null);
+  const detailPaneRef = useRef<HTMLDivElement>(null);
+  const annotatedCount = useMemo(() => matches.filter((match) => match.genotypeData).length, [matches]);
 
   const filteredMatches = useMemo(() => {
-    let filtered = [...matches];
+    const term = searchTerm.trim().toLowerCase();
+    return matches
+      .filter((match) => {
+        if (onlyWithGenotype && !match.genotypeData) return false;
+        return (
+          !term ||
+          [
+            match.rsid,
+            match.genotype,
+            match.parsedData.geneSymbol,
+            match.parsedData.summary,
+            match.snpData.content,
+            match.genotypeData?.content,
+          ].some((value) => value?.toLowerCase().includes(term))
+        );
+      })
+      .sort((a, b) => {
+        const byId = rsidCollator.compare(a.rsid, b.rsid);
+        return sortMode === "rsid" ? byId : (b.parsedData.magnitude ?? -1) - (a.parsedData.magnitude ?? -1) || byId;
+      });
+  }, [matches, searchTerm, onlyWithGenotype, sortMode]);
 
-    // Filter by genotype match (only show SNPs with matching genotype data)
-    if (onlyWithGenotype) {
-      filtered = filtered.filter((match) => match.genotypeData !== undefined);
+  const selectedSNP = filteredMatches.find((match) => match.rsid === selectedId);
+  const selectedPresentation = selectedSNP ? presentMatch(selectedSNP) : undefined;
+
+  useEffect(() => {
+    if (detailPaneRef.current) detailPaneRef.current.scrollTop = 0;
+    if (selectedSNP) {
+      detailRef.current?.focus({ preventScroll: true });
+      if (window.matchMedia("(max-width: 1023px)").matches) {
+        detailPaneRef.current?.scrollIntoView({ block: "nearest" });
+      }
     }
+  }, [selectedSNP]);
 
-    // Apply search filter
-    if (searchTerm) {
-      const term = searchTerm.toLowerCase();
-      filtered = filtered.filter(
-        (match) =>
-          match.rsid.toLowerCase().includes(term) ||
-          match.genotype.toLowerCase().includes(term) ||
-          match.snpData.content.toLowerCase().includes(term) ||
-          match.genotypeData?.content.toLowerCase().includes(term),
-      );
-    }
-
-    // Sort by magnitude (descending) - higher magnitudes first
-    // Put items without magnitude at the end
-    return filtered.sort((a, b) => {
-      const magA = a.parsedData.magnitude ?? -1;
-      const magB = b.parsedData.magnitude ?? -1;
-      return magB - magA;
-    });
-  }, [matches, searchTerm, onlyWithGenotype]);
-
-  const handleExportSNPs = () => {
-    downloadCsvFile("snp-matches.csv", buildCsv(filteredMatches, SNP_EXPORT_COLUMNS));
+  const clearFilters = () => {
+    setSearchTerm("");
+    setOnlyWithGenotype(false);
+    setSelectedId(null);
+    searchRef.current?.focus();
   };
 
   const itemContent = (index: number) => {
     const match = filteredMatches[index];
+    const presentation = presentMatch(match);
     const isSelected = selectedSNP?.rsid === match.rsid;
 
     return (
       <button
         type="button"
-        className={twMerge(
-          "w-full cursor-pointer rounded-xl border border-transparent p-3 text-left transition-colors",
-          isSelected ? "border-brand-100 bg-brand-50" : "bg-white hover:bg-slate-50",
-        )}
-        onClick={() => setSelectedSNP(match)}
+        aria-pressed={isSelected}
+        aria-label={`View ${match.rsid.toUpperCase()}, genotype ${match.genotype.toUpperCase()}`}
+        className="variant-row"
+        onClick={() => setSelectedId(match.rsid)}
       >
-        <div className="mb-1 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-slate-900">{match.rsid.toUpperCase()}</span>
-            {match.parsedData.magnitude !== undefined && (
-              <span className="rounded-full bg-violet-100 px-2 py-0.5 text-xs font-medium text-violet-800">
-                Mag: {match.parsedData.magnitude}
-              </span>
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <span className="font-mono text-sm font-semibold text-slate-900">{match.rsid}</span>
+            {presentation.gene && (
+              <span className="truncate text-xs font-medium text-slate-500">{presentation.gene}</span>
             )}
           </div>
+          <span className="shrink-0 rounded-md border border-slate-200 bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+            {match.genotype.toUpperCase()}
+          </span>
         </div>
-        <div className="text-xs text-slate-600">
-          Your Genotype: <strong>{match.genotype.toUpperCase()}</strong> | Chr: {match.chromosome} | Pos:{" "}
-          {match.position}
+        <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-600">
+          {presentation.preview || "Explore the available SNPedia research for this variant."}
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-medium text-slate-500">
+          {match.parsedData.magnitude !== undefined && (
+            <span title="SNPedia's editorial measure of interest; not a probability or risk score.">
+              Magnitude <span className="text-slate-800">{match.parsedData.magnitude}</span>
+            </span>
+          )}
+          <span>{match.genotypeData ? "Genotype annotation" : "General variant information"}</span>
+          <span className="ml-auto text-brand-700" aria-hidden="true">
+            →
+          </span>
         </div>
-        {match.genotypeData?.content && (
-          <div className="mt-1 overflow-hidden text-ellipsis whitespace-nowrap text-xs text-slate-500">
-            {match.genotypeData.content.substring(0, 100)}...
-          </div>
-        )}
       </button>
     );
   };
 
   return (
-    <div className="flex h-full flex-col gap-5">
-      {/* View mode toggle */}
+    <div className="flex min-w-0 flex-col gap-4">
       {genosets.length > 0 && (
-        <div className="inline-flex self-start gap-1 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+        <div
+          className="inline-flex max-w-full self-start gap-1 rounded-xl border border-slate-200 bg-white p-1"
+          aria-label="Result type"
+        >
           <button
             type="button"
+            aria-pressed={viewMode === "snps"}
             onClick={() => setViewMode("snps")}
             className={twMerge(
-              "cursor-pointer rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
-              viewMode === "snps" ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-50",
+              "cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold transition-colors",
+              viewMode === "snps" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50",
             )}
           >
-            SNPs ({matches.length.toLocaleString()})
+            Variants <span className="ml-1 text-xs opacity-65">{matches.length.toLocaleString()}</span>
           </button>
           <button
             type="button"
+            aria-pressed={viewMode === "genosets"}
             onClick={() => setViewMode("genosets")}
             className={twMerge(
-              "cursor-pointer rounded-xl px-4 py-2 text-sm font-semibold transition-colors",
-              viewMode === "genosets" ? "bg-brand-600 text-white" : "text-slate-600 hover:bg-slate-50",
+              "cursor-pointer rounded-lg px-3 py-2 text-sm font-semibold transition-colors",
+              viewMode === "genosets" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50",
             )}
           >
-            Genosets ({genosets.length.toLocaleString()})
+            Related genosets <span className="ml-1 text-xs opacity-65">{genosets.length.toLocaleString()}</span>
           </button>
         </div>
       )}
 
-      {/* SNP View */}
-      {viewMode === "snps" && (
-        <div className="flex h-full flex-col gap-5">
-          <div className="surface-panel p-5 sm:p-6">
-            <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+      {viewMode === "snps" || genosets.length === 0 ? (
+        <>
+          <div className={twMerge("surface-panel p-5 sm:p-6", selectedSNP && "hidden lg:block")}>
+            <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <p className="section-label mb-2">Analysis results</p>
-                <h2 className="text-2xl font-semibold tracking-tight text-slate-950">
-                  Found {matches.length.toLocaleString()} matching SNP{matches.length !== 1 ? "s" : ""}
-                </h2>
-                <p className="mt-1 text-sm text-slate-500">
-                  Prioritized by magnitude, with genotype matches shown first.
+                <p className="section-label mb-2">Your DNA, in context</p>
+                <h2 className="text-2xl font-semibold tracking-tight text-slate-950">Your variant matches</h2>
+                <p className="mt-2 text-sm leading-relaxed text-slate-500">
+                  <span className="font-medium text-slate-700">{matches.length.toLocaleString()}</span> variants in
+                  SNPedia · {annotatedCount.toLocaleString()} with an annotation for your genotype
                 </p>
               </div>
               <button
                 type="button"
-                onClick={handleExportSNPs}
+                onClick={() => downloadCsvFile("snp-matches.csv", buildCsv(filteredMatches, SNP_EXPORT_COLUMNS))}
                 disabled={filteredMatches.length === 0}
-                className="primary-button"
+                className="secondary-button"
               >
-                Export CSV
+                Export CSV{" "}
+                <span aria-hidden="true" className="ml-1">
+                  ↓
+                </span>
               </button>
             </div>
-            <input
-              type="text"
-              aria-label="Search matching SNPs"
-              placeholder="Search by rsid, genotype, or content..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="field-control"
-            />
-            <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
-              <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  aria-label="Only show SNPs with matching genotype data"
-                  checked={onlyWithGenotype}
-                  onChange={(e) => setOnlyWithGenotype(e.target.checked)}
-                  className="size-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
-                />
-                <span>Only show SNPs with matching genotype data</span>
-              </label>
-              <div className="text-xs font-medium text-slate-500">
-                Showing {filteredMatches.length.toLocaleString()} of {matches.length.toLocaleString()} results
+            <div className="mt-5">
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <div className="relative flex-1">
+                  <svg
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.7"
+                    aria-hidden="true"
+                    className="pointer-events-none absolute top-3 left-3.5 size-5 text-slate-400"
+                  >
+                    <circle cx="10.5" cy="10.5" r="6.5" />
+                    <path d="m16 16 4 4" />
+                  </svg>
+                  <input
+                    ref={searchRef}
+                    type="search"
+                    aria-label="Search matching SNPs"
+                    placeholder="Search a variant, gene, or keyword"
+                    value={searchTerm}
+                    onChange={(event) => {
+                      setSearchTerm(event.target.value);
+                      setSelectedId(null);
+                    }}
+                    className="field-control pl-11"
+                  />
+                </div>
+                <select
+                  aria-label="Sort matching variants"
+                  value={sortMode}
+                  onChange={(event) => setSortMode(event.target.value as SortMode)}
+                  className="field-control sm:w-52"
+                >
+                  <option value="magnitude">Magnitude: high to low</option>
+                  <option value="rsid">Variant ID</option>
+                </select>
+              </div>
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={onlyWithGenotype}
+                    onChange={(event) => {
+                      setOnlyWithGenotype(event.target.checked);
+                      setSelectedId(null);
+                    }}
+                    className="size-4 rounded border-slate-300 accent-brand-600"
+                  />
+                  With annotations for my genotype
+                </label>
+                <span aria-live="polite" className="text-xs tabular-nums text-slate-500">
+                  {filteredMatches.length.toLocaleString()} results
+                </span>
               </div>
             </div>
           </div>
 
-          <div className="flex flex-1 flex-col gap-4 lg:min-h-[640px] lg:flex-row">
-            {/* Left panel - List of matches */}
-            <div className="surface-panel h-[360px] flex-shrink-0 overflow-hidden p-2 lg:h-[640px] lg:w-[390px]">
-              <Virtuoso style={{ height: "100%" }} totalCount={filteredMatches.length} itemContent={itemContent} />
+          <div className="workspace-split">
+            <div className={twMerge("workspace-list flex flex-col overflow-hidden", selectedSNP && "hidden lg:flex")}>
+              {filteredMatches.length > 0 ? (
+                <Virtuoso
+                  style={{ height: "100%" }}
+                  totalCount={filteredMatches.length}
+                  computeItemKey={(index) => filteredMatches[index].rsid}
+                  itemContent={itemContent}
+                />
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center px-5 text-center">
+                  <span
+                    aria-hidden="true"
+                    className="mb-4 grid size-12 place-items-center rounded-2xl bg-slate-50 text-xl text-slate-400"
+                  >
+                    ⌕
+                  </span>
+                  <h3 className="font-semibold text-slate-800">
+                    {matches.length ? "No variants in this view" : "No variant matches found"}
+                  </h3>
+                  <p className="mt-2 max-w-64 text-sm leading-relaxed text-slate-500">
+                    {matches.length
+                      ? "Try a different keyword or include variants without genotype annotations."
+                      : "The variants in this file are not in the current SNPedia database."}
+                  </p>
+                  {matches.length > 0 && (
+                    <button type="button" onClick={clearFilters} className="secondary-button mt-5">
+                      Clear filters
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
-            {/* Right panel - Selected SNP details */}
-            <div className="surface-panel min-h-[320px] flex-1 overflow-y-auto p-5 sm:p-6 lg:h-[640px]">
-              {selectedSNP ? (
-                <div>
-                  <p className="section-label mb-2">Variant detail</p>
-                  <h3 className="mt-0 text-2xl font-semibold tracking-tight text-slate-950">
+            <div
+              ref={detailPaneRef}
+              className={twMerge("workspace-detail p-5 sm:p-7", !selectedSNP && "hidden lg:block")}
+            >
+              {selectedSNP && selectedPresentation ? (
+                <article>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedId(null);
+                      requestAnimationFrame(() => searchRef.current?.focus());
+                    }}
+                    className="detail-back"
+                  >
+                    ← Back to results
+                  </button>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <p className="section-label mb-2">Variant detail</p>
+                      <h3
+                        ref={detailRef}
+                        tabIndex={-1}
+                        className="font-mono text-2xl font-semibold tracking-tight text-slate-950 outline-none"
+                      >
+                        {selectedSNP.rsid}
+                      </h3>
+                    </div>
                     <a
                       href={`https://www.snpedia.com/index.php/${selectedSNP.rsid}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="transition-colors hover:text-brand-700"
+                      className="mt-1 text-xs font-medium text-brand-700 hover:underline"
                     >
-                      {selectedSNP.rsid.toUpperCase()}
+                      Open SNPedia <span aria-hidden="true">↗</span>
                     </a>
-                  </h3>
-
-                  {/* Your Genotype */}
-                  <div className="mt-5 mb-4 rounded-2xl border border-brand-100 bg-brand-50 p-4">
-                    <h4 className="mb-2 text-sm font-semibold text-slate-800">Your genotype</h4>
-                    <div className="mb-1 flex items-center gap-2">
-                      <div className="text-lg font-bold text-brand-700">{selectedSNP.genotype.toUpperCase()}</div>
-                      {selectedSNP.parsedData.magnitude !== undefined && (
-                        <span className="rounded-full bg-violet-100 px-2.5 py-1 text-sm font-medium text-violet-800">
-                          Magnitude: {selectedSNP.parsedData.magnitude}
-                        </span>
-                      )}
-                    </div>
-                    <div className="text-xs text-slate-600">
-                      Chr {selectedSNP.chromosome} : {selectedSNP.position}
-                    </div>
                   </div>
-
-                  {/* Genotype-Specific Content */}
-                  {selectedSNP.genotypeData?.content && (
-                    <div className="subtle-panel mb-4 p-4">
-                      <h4 className="mb-3 text-sm font-semibold text-slate-800">
-                        Genotype-specific information ({selectedSNP.genotype})
-                      </h4>
-                      <WikiContent content={selectedSNP.genotypeData.content} />
+                  <p className="mt-5 text-lg leading-relaxed text-slate-800">
+                    {selectedPresentation.preview ||
+                      "No summary is available for this variant. Explore the research notes below."}
+                  </p>
+                  <dl className="my-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-4">
+                    <div className="bg-brand-50 p-3.5">
+                      <dt className="text-[11px] font-medium text-brand-700">Your genotype</dt>
+                      <dd className="mt-1 font-mono text-lg font-semibold text-brand-700">
+                        {selectedSNP.genotype.toUpperCase()}
+                      </dd>
                     </div>
+                    <div className="bg-white p-3.5">
+                      <dt className="text-[11px] font-medium text-slate-500">Gene</dt>
+                      <dd className="mt-1 break-words text-sm font-semibold text-slate-800">
+                        {selectedPresentation.gene || "Not listed"}
+                      </dd>
+                    </div>
+                    <div
+                      className="bg-white p-3.5"
+                      title="SNPedia's editorial measure of interest; not a probability or risk score."
+                    >
+                      <dt className="text-[11px] font-medium text-slate-500">Magnitude</dt>
+                      <dd className="mt-1 text-sm font-semibold text-slate-800">
+                        {selectedSNP.parsedData.magnitude ?? "Not rated"}
+                      </dd>
+                    </div>
+                    <div className="bg-white p-3.5">
+                      <dt className="text-[11px] font-medium text-slate-500">SNPedia repute</dt>
+                      <dd className="mt-1 break-words text-sm font-semibold capitalize text-slate-800">
+                        {selectedPresentation.repute || "Not listed"}
+                      </dd>
+                    </div>
+                  </dl>
+                  <p className="mb-6 text-xs text-slate-500">
+                    Chromosome {selectedSNP.chromosome} <span aria-hidden="true">·</span> Position{" "}
+                    {selectedSNP.position}
+                  </p>
+                  {selectedSNP.genotypeData?.content ? (
+                    <section className="border-t border-slate-200 pt-5">
+                      <h4 className="mb-4 text-sm font-semibold text-slate-900">About your genotype</h4>
+                      <WikiContent content={selectedSNP.genotypeData.content} hideSummary />
+                    </section>
+                  ) : (
+                    <p className="rounded-xl bg-slate-50 p-4 text-sm leading-relaxed text-slate-600">
+                      This variant is in SNPedia, but no annotation matches your genotype. The notes below describe the
+                      variant in general.
+                    </p>
                   )}
-
-                  {/* SNPedia Content */}
                   {selectedSNP.snpData.content && (
-                    <div className="subtle-panel mb-4 p-4">
-                      <h4 className="mb-3 text-sm font-semibold text-slate-800">General SNP information</h4>
-                      <WikiContent content={selectedSNP.snpData.content} />
-                    </div>
+                    <details className="mt-6 border-t border-slate-200 pt-5" open={!selectedSNP.genotypeData}>
+                      <summary className="cursor-pointer text-sm font-semibold text-slate-900">
+                        General variant research
+                      </summary>
+                      <div className="mt-4">
+                        <WikiContent content={selectedSNP.snpData.content} hideSummary={!selectedSNP.genotypeData} />
+                      </div>
+                    </details>
                   )}
-                </div>
+                </article>
               ) : (
-                <div className="flex min-h-[280px] items-center justify-center text-center text-sm font-medium text-slate-400">
-                  Select a SNP from the list to view details
+                <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+                  <div
+                    aria-hidden="true"
+                    className="mb-5 grid size-14 place-items-center rounded-2xl border border-brand-100 bg-brand-50 text-2xl text-brand-600"
+                  >
+                    ↗
+                  </div>
+                  <h3 className="text-xl font-semibold tracking-tight text-slate-800">
+                    A closer look at your variants
+                  </h3>
+                  <p className="mt-3 max-w-xs text-sm leading-relaxed text-slate-500">
+                    Select a result to explore your genotype, a readable summary, and the underlying research.
+                  </p>
+                  <p className="mt-6 max-w-xs text-xs leading-relaxed text-slate-400">
+                    Magnitude reflects SNPedia’s level of interest in a finding. It is not a probability or a personal
+                    risk score.
+                  </p>
                 </div>
               )}
             </div>
           </div>
-        </div>
+        </>
+      ) : (
+        <GenosetDisplay genosets={genosets} />
       )}
-
-      {/* Genoset View */}
-      {viewMode === "genosets" && <GenosetDisplay genosets={genosets} />}
     </div>
   );
 }

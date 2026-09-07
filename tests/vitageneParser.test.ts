@@ -51,3 +51,7 @@ test("registry detects Vitagene-style txt exports", () => {
   expect(detection.parser?.metadata.id).toBe("vitagene");
   expect(detection.confident).toBe(true);
 });
+
+test("Vitagene provider comments keep confidence within the documented range", () => {
+  expect(parserVitagene.validate(`# Vitagene raw data\n${vitageneContent}`).confidence).toBe(1);
+});

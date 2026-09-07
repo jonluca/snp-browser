@@ -1,0 +1,228 @@
+import type { Database } from "sql.js";
+import type { UserGenotype, MatchedSNP, ParsedSNPData } from "../types/snp";
+import { extractSnpediaFields, type SnpediaSourceFields } from "../utils/snpediaFields";
+
+type OptionalSnpColumn = "gene" | "gene_s" | "clin_gene_name" | "clin_sig" | "clin_disease";
+
+function selectOptionalJoinedSnpColumn(
+  column: OptionalSnpColumn,
+  alias: string,
+  snpsTableColumns: Set<string>,
+): string {
+  return snpsTableColumns.has(column) ? `s.${column} as ${alias}` : `NULL as ${alias}`;
+}
+
+function getGenotypeJoinColumns(snpsTableColumns: Set<string>): string {
+  return [
+    "g.id as genotype_id",
+    "g.content as genotype_content",
+    "g.scraped_at as genotype_scraped_at",
+    "g.snp_id",
+    "g.genotype",
+    "s.rsid",
+    "s.content as snp_content",
+    "s.scraped_at as snp_scraped_at",
+    selectOptionalJoinedSnpColumn("gene", "snp_gene", snpsTableColumns),
+    selectOptionalJoinedSnpColumn("gene_s", "snp_gene_s", snpsTableColumns),
+    selectOptionalJoinedSnpColumn("clin_gene_name", "snp_clin_gene_name", snpsTableColumns),
+    selectOptionalJoinedSnpColumn("clin_sig", "snp_clin_sig", snpsTableColumns),
+    selectOptionalJoinedSnpColumn("clin_disease", "snp_clin_disease", snpsTableColumns),
+  ].join(",\n  ");
+}
+
+type Orientation = "plus" | "minus" | "unknown";
+
+function parseOrientationFromContent(content: string): {
+  orientation: Orientation;
+  stabilizedOrientation: Orientation;
+} {
+  const orientationRegex = /\|\s*Orientation\s*=\s*([^|\n}]+)/i;
+  const stabilizedOrientationRegex = /\|\s*StabilizedOrientation\s*=\s*([^|\n}]+)/i;
+
+  const orientationMatch = content.match(orientationRegex);
+  const stabilizedMatch = content.match(stabilizedOrientationRegex);
+
+  const normalize = (val: string | undefined | null): Orientation => {
+    if (!val) return "unknown";
+    const v = val.trim().toLowerCase();
+    if (v.startsWith("plus") || v === "+") return "plus";
+    if (v.startsWith("minus") || v === "-") return "minus";
+    return "unknown";
+  };
+
+  return {
+    orientation: normalize(orientationMatch?.[1]),
+    stabilizedOrientation: normalize(stabilizedMatch?.[1]),
+  };
+}
+
+/**
+ * Complement a genotype string (A<->T, C<->G), leaving other characters as-is.
+ * Input is assumed lowercased.
+ */
+function complementGenotype(genotype: string): string {
+  const map: Record<string, string> = {
+    a: "t",
+    t: "a",
+    c: "g",
+    g: "c",
+  };
+
+  return genotype
+    .split("")
+    .map((ch) => map[ch] ?? ch)
+    .join("");
+}
+
+function normalizeGenotype(genotype: string): string {
+  const normalized = genotype.replace(/[^a-z0-9-]/gi, "").toLowerCase();
+  // A SNP's two unphased alleles have no meaningful order. Longer allele
+  // sequences must retain their internal order.
+  return normalized.length === 2 ? normalized.split("").sort().join("") : normalized;
+}
+/**
+ * Parse content fields to extract structured data
+ */
+function parseContentData(
+  rsid: string,
+  snpContent: string,
+  genotypeContent?: string,
+  snpFields: SnpediaSourceFields = {},
+): ParsedSNPData {
+  const snpSnpediaFields = extractSnpediaFields(snpContent, snpFields);
+  const genotypeSnpediaFields = genotypeContent ? extractSnpediaFields(genotypeContent) : {};
+  const { orientation, stabilizedOrientation } = parseOrientationFromContent(snpContent);
+
+  return {
+    rsid,
+    rawContent: snpContent,
+    genotypeContent,
+    geneSymbol: snpSnpediaFields.geneSymbol ?? genotypeSnpediaFields.geneSymbol,
+    magnitude: genotypeSnpediaFields.magnitude ?? snpSnpediaFields.magnitude,
+    repute: genotypeSnpediaFields.repute ?? snpSnpediaFields.repute,
+    summary: genotypeSnpediaFields.summary ?? snpSnpediaFields.summary,
+    orientation,
+    stabilizedOrientation,
+  };
+}
+
+/**
+ * Matches SNPs in batches to avoid SQLite parameter limits
+ */
+export async function matchSNPsInBatches(
+  database: Database,
+  snpsTableColumns: Set<string>,
+  genotypes: UserGenotype[],
+  onProgress: (current: number, total: number) => void,
+): Promise<MatchedSNP[]> {
+  const matches: MatchedSNP[] = [];
+  const batchSize = 500; // Stay well under SQLite's 999 parameter limit
+
+  // create index on lowercase snp_id for faster lookups
+  database.run(`CREATE INDEX IF NOT EXISTS idx_genotypes_snp_id_lower ON genotypes(lower(snp_id));`);
+  database.run(`CREATE INDEX IF NOT EXISTS idx_snps_rsid_nocase ON snps(rsid COLLATE NOCASE);`);
+
+  for (let i = 0; i < genotypes.length; i += batchSize) {
+    const batch = genotypes.slice(i, Math.min(i + batchSize, genotypes.length));
+    const genotypesByRsid = new Map<string, UserGenotype[]>();
+    for (const genotype of batch) {
+      const rsid = genotype.rsid.toLowerCase();
+      const candidates = genotypesByRsid.get(rsid) ?? [];
+      candidates.push(genotype);
+      genotypesByRsid.set(rsid, candidates);
+    }
+    const rsids = [...genotypesByRsid.keys()];
+
+    // Create parameterized query - join genotypes with snps on snp_id
+    const placeholders = rsids.map(() => "?").join(",");
+    const query = `
+      SELECT ${getGenotypeJoinColumns(snpsTableColumns)}
+      FROM genotypes g
+      INNER JOIN snps s ON g.snp_id = s.rsid COLLATE NOCASE
+      WHERE lower(g.snp_id) IN (${placeholders})
+    `;
+
+    const stmt = database.prepare(query);
+    try {
+      stmt.bind(rsids);
+
+      while (stmt.step()) {
+        const row = stmt.getAsObject();
+        const snp_id = row.snp_id as string;
+
+        const rowGenotypeRaw = (row.genotype as string | null) ?? "";
+        // SNPedia genotype, normalized for comparison
+        const snpediaGenotype = normalizeGenotype(rowGenotypeRaw);
+        if (!snpediaGenotype || snpediaGenotype === "--") continue;
+
+        const snpContent = (row.snp_content as string) || "";
+        const genotypeContent = (row.genotype_content as string) || "";
+
+        // Determine orientation for this SNP
+        const { orientation, stabilizedOrientation } = parseOrientationFromContent(snpContent);
+        // Per SNPedia docs, StabilizedOrientation is what the genotype definitions use;
+        // fall back to Orientation if needed.
+        const effectiveOrientation: Orientation =
+          stabilizedOrientation !== "unknown" ? stabilizedOrientation : orientation;
+
+        // Find matching user genotype for this SNP, taking orientation into account
+        const userGenotype = genotypesByRsid.get(snp_id.toLowerCase())?.find((g) => {
+          // 23andMe genotypes are plus-strand. If SNPedia’s effective orientation is minus,
+          // flip the user genotype into minus to match SNPedia’s definitions.
+          let normalizedUserGenotype = normalizeGenotype(g.genotype || "");
+          if (!normalizedUserGenotype || normalizedUserGenotype === "--") return false;
+          if (effectiveOrientation === "minus") {
+            normalizedUserGenotype = normalizeGenotype(complementGenotype(normalizedUserGenotype));
+          }
+
+          return normalizedUserGenotype === snpediaGenotype;
+        });
+
+        if (userGenotype) {
+          const rsid = row.rsid as string;
+
+          // Parse content (this will also re-parse orientation and make it available downstream)
+          const snpFields = {
+            gene: row.snp_gene,
+            gene_s: row.snp_gene_s,
+            clin_gene_name: row.snp_clin_gene_name,
+            clin_sig: row.snp_clin_sig,
+            clin_disease: row.snp_clin_disease,
+          };
+          const parsedData = parseContentData(rsid, snpContent, genotypeContent, snpFields);
+
+          matches.push({
+            ...userGenotype,
+            snpData: {
+              rsid,
+              content: snpContent,
+              scraped_at: row.snp_scraped_at as string | undefined,
+              gene: row.snp_gene as string | undefined,
+              gene_s: row.snp_gene_s as string | undefined,
+              clin_gene_name: row.snp_clin_gene_name as string | undefined,
+              clin_sig: row.snp_clin_sig as string | undefined,
+              clin_disease: row.snp_clin_disease as string | undefined,
+            },
+            genotypeData: {
+              id: row.genotype_id as string,
+              content: genotypeContent,
+              scraped_at: row.genotype_scraped_at as string | undefined,
+              snp_id: snp_id,
+              // keep this as the SNPedia genotype (its own orientation)
+              genotype: snpediaGenotype,
+            },
+            parsedData,
+          });
+        }
+      }
+    } finally {
+      stmt.free();
+    }
+
+    if (i % 1000 === 0 || i + batchSize >= genotypes.length) {
+      onProgress(Math.min(i + batchSize, genotypes.length), genotypes.length);
+    }
+  }
+
+  return matches;
+}

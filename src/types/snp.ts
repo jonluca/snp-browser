@@ -8,6 +8,8 @@ export interface SNPRecord {
   clin_gene_name?: string;
   clin_sig?: string;
   clin_disease?: string;
+  chromosome?: string;
+  position?: string;
 }
 
 // Raw database record from genotypes table

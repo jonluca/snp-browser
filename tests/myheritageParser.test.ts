@@ -45,3 +45,9 @@ test("registry prefers MyHeritage for MyHeritage exports", () => {
 
   expect(detection.parser?.metadata.id).toBe("myheritage");
 });
+
+test("MyHeritage parser recognizes provider comments with a single hash", () => {
+  const content = myHeritageContent.replace("##fileformat=MyHeritage\n", "");
+
+  expect(parserMyHeritage.validate(content).confidence).toBeGreaterThanOrEqual(0.9);
+});

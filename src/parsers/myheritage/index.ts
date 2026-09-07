@@ -39,7 +39,7 @@ export class ParserMyHeritage implements DNAParser {
       const trimmed = line.trim();
 
       // Check for MyHeritage-specific comments
-      if (trimmed.startsWith("##")) {
+      if (trimmed.startsWith("#")) {
         const lower = trimmed.toLowerCase();
         if (lower.includes("myheritage")) {
           hasMyHeritageHeader = true;

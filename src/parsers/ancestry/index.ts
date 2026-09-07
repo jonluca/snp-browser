@@ -133,6 +133,15 @@ export class ParserAncestry implements DNAParser {
       // Parse data line - Ancestry uses tabs
       const parts = line.split(/\t/);
 
+      if (
+        parts[0]?.toLowerCase() === "rsid" &&
+        parts[3]?.toLowerCase() === "allele1" &&
+        parts[4]?.toLowerCase() === "allele2"
+      ) {
+        skippedLines++;
+        continue;
+      }
+
       if (parts.length < 5) {
         errors.push(`Line ${i + 1}: Invalid format - expected 5 columns, got ${parts.length}`);
         skippedLines++;

@@ -32,3 +32,20 @@ test("extractSnpediaFields prefers database gene and clinical fields when presen
   expect(fields.clinicalSignificance).toBe("risk factor");
   expect(fields.disease).toBe("Alzheimer disease");
 });
+
+test("extractSnpediaFields reads fields after adjacent nested template delimiters", () => {
+  const fields = extractSnpediaFields(
+    "{{Genotype|note={{outer|value={{inner|summary=Nested summary}}}}|summary=Actual summary|repute=Good|magnitude=3}}",
+  );
+
+  expect(fields.summary).toBe("Actual summary");
+  expect(fields.repute).toBe("Good");
+  expect(fields.magnitude).toBe(3);
+});
+
+test("extractSnpediaFields keeps wiki link labels within their field", () => {
+  const fields = extractSnpediaFields("{{Rsnum|gene=[[BRCA1|BRCA1 gene]]|summary=Some trait}}");
+
+  expect(fields.geneSymbol).toBe("BRCA1 gene");
+  expect(fields.summary).toBe("Some trait");
+});

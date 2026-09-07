@@ -33,7 +33,11 @@ export class ParserVitagene implements DNAParser {
         if (lowerComment.includes("vitagene")) {
           hasVitageneComment = true;
         }
-        if (lowerComment.includes("myheritage")) {
+        if (
+          lowerComment.includes("myheritage") ||
+          lowerComment.includes("familytreedna") ||
+          lowerComment.includes("ftdna")
+        ) {
           hasKnownOtherProviderComment = true;
         }
         continue;
@@ -68,7 +72,7 @@ export class ParserVitagene implements DNAParser {
 
     return {
       valid,
-      confidence: valid ? confidence : 0,
+      confidence: valid ? Math.min(confidence, 1) : 0,
       reason: valid
         ? `Detected Vitagene-style RSID CSV format with ${validDataLines} valid data lines in the sampled lines`
         : "File doesn't appear to be Vitagene RSID CSV format",

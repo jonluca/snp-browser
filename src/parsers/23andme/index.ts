@@ -48,7 +48,8 @@ export class Parser23andMe implements DNAParser {
 
       // Check for valid rsid data format
       const parts = trimmed.split(/\s+/);
-      if (parts.length >= 4 && /^(rs|i)\d+/i.test(parts[0])) {
+      // Ancestry's five-column records must not be parsed as a single allele.
+      if (parts.length === 4 && /^(rs|i)\d+/i.test(parts[0])) {
         hasRsidData = true;
         validDataLines++;
 

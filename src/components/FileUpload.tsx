@@ -1,4 +1,4 @@
-import { useState, useCallback, type DragEvent, type ChangeEvent } from "react";
+import { useState, useCallback, useRef, useId, type DragEvent, type ChangeEvent } from "react";
 import { twMerge } from "tailwind-merge";
 import { getSupportedExtensions, getAllParsers } from "../parsers";
 
@@ -7,121 +7,152 @@ interface FileUploadProps {
   disabled?: boolean;
 }
 
-// Get supported file extensions and formats
 const SUPPORTED_EXTENSIONS = Array.from(new Set([...getSupportedExtensions(), ".zip"])).join(",");
 const SUPPORTED_FORMATS = getAllParsers();
 
 export function FileUpload({ onFileSelect, disabled = false }: FileUploadProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [selectionError, setSelectionError] = useState<string | null>(null);
+  const dragDepthRef = useRef(0);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const inputId = useId();
 
-  const handleDragOver = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      if (!disabled) {
-        setIsDragging(true);
+  const selectFiles = useCallback(
+    (files: File[]) => {
+      if (disabled || files.length === 0) return;
+      if (files.length > 1) {
+        setSelectionError("Choose one DNA file at a time. A ZIP archive can be selected as a single file.");
+        return;
       }
-    },
-    [disabled],
-  );
-
-  const handleDragLeave = useCallback((e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  }, []);
-
-  const handleDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      e.preventDefault();
-      e.stopPropagation();
-      setIsDragging(false);
-
-      if (disabled) return;
-
-      const files = Array.from(e.dataTransfer.files);
-      if (files.length > 0) {
-        onFileSelect(files[0]);
+      if (files[0].size === 0) {
+        setSelectionError("This file is empty. Choose a DNA export that contains genotype data.");
+        return;
       }
+      setSelectionError(null);
+      onFileSelect(files[0]);
     },
     [disabled, onFileSelect],
   );
 
-  const handleFileInput = useCallback(
-    (e: ChangeEvent<HTMLInputElement>) => {
-      const files = e.target.files;
-      if (files && files.length > 0) {
-        onFileSelect(files[0]);
-      }
+  const handleDragEnter = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      if (disabled || !event.dataTransfer.types.includes("Files")) return;
+      dragDepthRef.current += 1;
+      setIsDragging(true);
     },
-    [onFileSelect],
+    [disabled],
+  );
+
+  const handleDragOver = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.dataTransfer.dropEffect = disabled ? "none" : "copy";
+    },
+    [disabled],
+  );
+
+  const handleDragLeave = useCallback((event: DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+    if (dragDepthRef.current === 0) setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: DragEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      dragDepthRef.current = 0;
+      setIsDragging(false);
+      selectFiles(Array.from(event.dataTransfer.files));
+    },
+    [selectFiles],
+  );
+
+  const handleFileInput = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.currentTarget.files ?? []);
+      // Reset the native input so the same file can be selected after a failed attempt.
+      event.currentTarget.value = "";
+      selectFiles(files);
+    },
+    [selectFiles],
   );
 
   return (
     <div
+      onDragEnter={handleDragEnter}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       className={twMerge(
-        "surface-panel flex min-h-[29rem] flex-col justify-center border-2 border-dashed p-6 text-center transition-all duration-200 sm:p-10",
-        isDragging
-          ? "border-brand-500 bg-brand-50 shadow-[0_18px_48px_-24px_rgba(8,124,98,0.38)]"
-          : "border-slate-200 bg-white/85",
-        disabled ? "cursor-not-allowed opacity-70" : "cursor-pointer hover:border-brand-500 hover:bg-brand-50/40",
+        "surface-panel overflow-hidden transition-colors duration-150",
+        isDragging && !disabled ? "border-brand-500 bg-brand-50 ring-4 ring-brand-100" : "border-slate-200 bg-white",
       )}
     >
-      <input
-        type="file"
-        id="file-input"
-        accept={SUPPORTED_EXTENSIONS}
-        onChange={handleFileInput}
-        disabled={disabled}
-        aria-label="Select a DNA data file"
-        className="hidden"
-      />
-      <label
-        htmlFor="file-input"
-        className={twMerge(
-          "flex h-full flex-col items-center justify-center",
-          disabled ? "cursor-not-allowed" : "cursor-pointer",
-        )}
-      >
-        <div className="mb-5 flex size-16 items-center justify-center rounded-2xl bg-brand-50 text-brand-700 ring-1 ring-brand-100">
-          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-8 fill-none stroke-current" strokeWidth="1.7">
-            <path d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5" strokeLinecap="round" strokeLinejoin="round" />
-            <path d="M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5v-2" strokeLinecap="round" />
-          </svg>
-        </div>
-        <div className="mb-2 text-xl font-semibold tracking-tight text-slate-900">
-          {isDragging ? "Release to analyze your file" : "Drop in your DNA data file"}
-        </div>
-        <div className="max-w-sm text-sm leading-6 text-slate-500">
-          Your file is read locally on this device and matched against the SNPedia reference database.
-        </div>
-        <span
+      <div className="flex min-h-[310px] flex-col items-center justify-center px-6 py-9 text-center sm:min-h-[330px] sm:p-10">
+        <input
+          ref={inputRef}
+          type="file"
+          id={inputId}
+          accept={SUPPORTED_EXTENSIONS}
+          onChange={handleFileInput}
+          disabled={disabled}
+          aria-label="Select a DNA data file"
+          className="hidden"
+        />
+        <div
           className={twMerge(
-            "mt-6 rounded-xl px-5 py-2.5 text-sm font-semibold",
-            disabled ? "bg-slate-100 text-slate-400" : "bg-brand-600 text-white shadow-sm",
+            "mb-6 flex size-14 items-center justify-center rounded-xl border text-brand-700 transition-colors",
+            isDragging ? "border-brand-500 bg-white" : "border-brand-100 bg-brand-50",
           )}
         >
-          {disabled ? "Getting ready..." : "Choose a file"}
-        </span>
-        <div className="mt-7 w-full max-w-lg border-t border-slate-100 pt-5 text-xs text-slate-500">
-          <div className="mb-3 font-semibold uppercase tracking-[0.14em] text-slate-400">Supported formats</div>
-          <div className="flex flex-wrap justify-center gap-2">
-            {SUPPORTED_FORMATS.map((parser) => (
-              <span
-                key={parser.metadata.id}
-                className="rounded-full bg-slate-100 px-3 py-1.5 font-medium text-slate-600"
-              >
-                {parser.metadata.name}
-              </span>
-            ))}
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 font-medium text-slate-600">ZIP archives</span>
-          </div>
-          <div className="mt-4 text-slate-400">TXT, CSV, VCF, gVCF and compressed exports auto-detected</div>
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="size-7 fill-none stroke-current" strokeWidth="1.5">
+            <path
+              d="M12 16V4m0 0L7.5 8.5M12 4l4.5 4.5M4 15.5v2A2.5 2.5 0 0 0 6.5 20h11a2.5 2.5 0 0 0 2.5-2.5v-2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </div>
-      </label>
+        <h2 className="text-xl font-semibold tracking-tight text-slate-950">
+          {isDragging && !disabled ? "Release to start your analysis" : "Start with your DNA file"}
+        </h2>
+        <p id={`${inputId}-description`} className="mt-2 max-w-xs text-sm leading-6 text-slate-500">
+          Drag and drop a raw DNA export here, or choose a file from your device.
+        </p>
+        <button
+          type="button"
+          onClick={() => inputRef.current?.click()}
+          disabled={disabled}
+          aria-describedby={`${inputId}-description`}
+          className="primary-button mt-6 inline-flex min-w-36 items-center justify-center gap-2"
+        >
+          {disabled ? "Getting ready…" : "Choose a file"}
+          {!disabled && <span aria-hidden="true">↑</span>}
+        </button>
+        <p className="mt-3 text-[11px] text-slate-400">Automatic format detection · One file at a time</p>
+        {selectionError && (
+          <p role="alert" className="mt-4 max-w-sm rounded-lg bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
+            {selectionError}
+          </p>
+        )}
+      </div>
+      <div className="border-t border-slate-100 bg-slate-50/60 px-5 py-5 sm:px-7">
+        <p className="mb-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+          Compatible with your provider
+        </p>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {SUPPORTED_FORMATS.map((parser) => (
+            <span key={parser.metadata.id} className="text-xs font-medium text-slate-600">
+              {parser.metadata.name}
+            </span>
+          ))}
+        </div>
+        <p className="mt-3 border-t border-slate-200/70 pt-3 text-[11px] leading-5 text-slate-400">
+          TXT, CSV, VCF, gVCF, GZIP & ZIP archives
+        </p>
+      </div>
     </div>
   );
 }

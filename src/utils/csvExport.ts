@@ -8,7 +8,10 @@ export interface CsvColumn<T> {
 function formatCsvValue(value: CsvValue): string {
   if (value === null || value === undefined) return "";
 
-  const text = String(value);
+  // Spreadsheet programs evaluate formula-like strings even in quoted CSV cells.
+  // Keep actual numeric values numeric, including negative numbers.
+  const text =
+    typeof value === "string" && (/^\s*[=+\-@]/.test(value) || /^[\t\r\n]/.test(value)) ? `'${value}` : String(value);
   if (!/[",\r\n]/.test(text)) return text;
 
   return `"${text.replace(/"/g, '""')}"`;

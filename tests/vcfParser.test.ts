@@ -162,3 +162,20 @@ test("VCF parser skips sample records whose FORMAT has no GT field", async () =>
   expect(result.genotypes).toEqual([]);
   expect(result.skippedLines).toBe(result.totalLines);
 });
+
+test("VCF parser does not interpret depth fields as a genotype when GT is absent", async () => {
+  const content = [
+    "##fileformat=VCFv4.2",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+    "1\t100\trs123\tA\tG\t.\tPASS\t.\tDP\t1",
+    "1\t200\trs456\tC\tT\t.\tPASS\t.\tDP:GT\t20:0/1",
+  ].join("\n");
+
+  for (const result of [
+    await parserVCF.parse(content, () => undefined),
+    await parserVCF.parseBlob(new Blob([content]), () => undefined),
+  ]) {
+    expect(result.genotypes).toEqual([{ rsid: "rs456", chromosome: "1", position: "200", genotype: "ct" }]);
+    expect(result.errors).toEqual([]);
+  }
+});

@@ -71,29 +71,33 @@ function splitTemplateParameters(content: string): string[] {
 
     if (char === "{" && next === "{") {
       braceDepth++;
-      current += char;
+      current += "{{";
+      index++;
       continue;
     }
 
     if (char === "}" && next === "}") {
       if (braceDepth === 0) {
         parameters.push(current);
-        break;
+        return parameters;
       }
       braceDepth--;
-      current += char;
+      current += "}}";
+      index++;
       continue;
     }
 
     if (char === "[" && next === "[") {
       linkDepth++;
-      current += char;
+      current += "[[";
+      index++;
       continue;
     }
 
     if (char === "]" && next === "]") {
       linkDepth = Math.max(0, linkDepth - 1);
-      current += char;
+      current += "]]";
+      index++;
       continue;
     }
 
