@@ -52,7 +52,7 @@ The final ClinVar pack indexes all overlapping gene symbols in 482,276 records. 
 
 Python 3.10+ and SQLite from Python's standard library are sufficient. `curl` is used only as a fallback for public hosts that reject Python's HTTP transport. No Python packages or API keys are required.
 
-Git includes the prepared catalog metadata and version manifests, but excludes the SQLite binaries. A fresh clone therefore cannot reuse those prepared versions without separately restoring their exact shard files. Choose a new unused local version, such as `local-initial-1` below, to build assets from public sources. Existing versions are reused only after every local shard passes presence, byte-size, and SHA-256 checks; an incomplete or corrupt version fails with instructions to use a new version and is never overwritten.
+Git includes the prepared catalog metadata and version manifests, but excludes the SQLite binaries. Production app builds use the public R2 catalog configured in the tracked `.env.production`, so a fresh clone can build the app without these binaries. Local reference preparation is needed for the default development catalog or an explicitly local production build. A fresh clone cannot reuse the prepared local versions without separately restoring their exact shard files. Choose a new unused local version, such as `local-initial-1` below, to build assets from public sources. Existing versions are reused only after every local shard passes presence, byte-size, and SHA-256 checks; an incomplete or corrupt version fails with instructions to use a new version and is never overwritten.
 
 ```sh
 python3 tools/reference/prepare_public.py --version local-initial-1
@@ -214,7 +214,11 @@ python3 tools/reference/build.py merge \
   --output public/references/manifest.json
 ```
 
-Upload versioned shard files and their license/provenance alongside the application assets, then publish the merged manifest **last**. Use `--base-url https://your-static-host.example/references` when building for a separate static asset origin and configure its CORS for the app. Serve immutable versioned shard URLs with long caching; serve the manifest with revalidation. SQLite/raw binary assets are ignored by Git and must be included in the static deployment separately. No production publishing is performed by these preparation scripts.
+Upload versioned shard files and their license/provenance to the public asset host, then publish the merged manifest **last**. The production configuration targets `https://static.snpbrowser.com/references/manifest.json` in the `snp-browser` R2 bucket. Preserve each file's path below `public/` as its object key: the catalog's root-relative `/references/...` shard URLs resolve on the catalog's host. The catalog and all selected assets must be published before enabling downloads in a deployed app; this configuration alone does not upload or verify them.
+
+The tracked `.env.production` sets `VITE_REFERENCE_MANIFEST_URL` for production builds. Vite embeds this URL at build time and skips copying local references when it points to an external host. Rebuild and redeploy after changing it. `bun dev` continues to use the local catalog by default; an ignored `.env.development.local` can set the same public URL. To bundle a prepared local catalog in production, set `VITE_REFERENCE_MANIFEST_URL=/references/manifest.json` in `.env.production.local`. A local build fails if any selected shard is missing or has the wrong byte size.
+
+For another static host, host the catalog and its `/references/` assets together, or build with `--base-url https://your-static-host.example/references` to write absolute asset URLs. Configure CORS for the app on both catalog and shards. Serve immutable versioned shard URLs with long caching and the main manifest with revalidation. Preserve the gzip response headers described above. SQLite/raw binary assets are ignored by Git and must be published separately. No production publishing is performed by these preparation scripts.
 
 ## Official source and license references
 

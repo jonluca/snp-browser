@@ -22,7 +22,7 @@ Reference packs are versioned, checksum-verified SQLite shards stored compressed
 
 When replacing older uncompressed packs, reload the app and use **Data sources → Clear reference downloads** before downloading the new versions. This frees older cached files as well as current references, while retaining SNPedia and your open analysis. Select the sources you want to download again.
 
-See [reference preparation and publishing](docs/reference-data.md) for reproducible source adapters, coverage, source terms, and static deployment. Binary reference files are excluded from Git. Prepare them before a local production build, or set `VITE_REFERENCE_MANIFEST_URL` to a published public catalog with CORS access. The build copies only the selected local release assets and their provenance; it does not bundle intermediate releases.
+See [reference preparation and publishing](docs/reference-data.md) for reproducible source adapters, coverage, source terms, and static deployment. Binary reference files are excluded from Git. The tracked `.env.production` configures production builds to request `https://static.snpbrowser.com/references/manifest.json` from R2, so they do not need or bundle local reference binaries. Development uses the local `/references/manifest.json` by default. When explicitly building with a local catalog, only its selected assets and provenance are copied.
 
 ## Features
 
@@ -59,7 +59,7 @@ See [reference preparation and publishing](docs/reference-data.md) for reproduci
 
 ### Quick Start
 
-Before building, [prepare the reference assets](docs/reference-data.md) or set `VITE_REFERENCE_MANIFEST_URL` to a published public catalog with CORS access. Reference binaries are excluded from Git, and the start scripts do not download or prepare them.
+Production builds use the public catalog URL in `.env.production` and do not require local reference binaries. Reference downloads require the catalog and its assets to be published at that URL with CORS access. The start scripts build the app; they do not publish or prepare reference data.
 
 For the fastest setup, use the included start scripts that automatically install bun (if needed), install dependencies, and build/run the production version:
 
@@ -105,6 +105,8 @@ bun dev
 # Build and run production version
 bun run prod
 ```
+
+For `bun dev`, [prepare local reference assets](docs/reference-data.md) or set `VITE_REFERENCE_MANIFEST_URL=https://static.snpbrowser.com/references/manifest.json` in an ignored `.env.development.local` file to use the public catalog. To build with prepared local assets instead, set `VITE_REFERENCE_MANIFEST_URL=/references/manifest.json` in `.env.production.local`. Restart development or rebuild production after changing these settings.
 
 ## Supported DNA File Formats
 
