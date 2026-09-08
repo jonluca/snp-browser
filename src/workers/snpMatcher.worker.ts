@@ -1,13 +1,24 @@
 import { expose } from "comlink";
-import initSqlJs, { type Database } from "sql.js";
+import initSqlJs, { type Database, type SqlJsStatic } from "sql.js";
 import sqlWasmUrl from "sql.js/dist/sql-wasm-browser.wasm?url";
-import type { UserGenotype, MatchedSNP, ParseResult, GenosetRecord, MatchedGenoset } from "../types/snp";
+import type { UserGenotype, MatchedSNP, ParseResult, GenosetRecord, MatchedGenoset, SNPRecord } from "../types/snp";
 import { parserRegistry } from "../parsers";
 import { parseFileWithDetection, parseFileBlobWithDetection } from "./fileParsing";
 import { extractSnpediaFields } from "../utils/snpediaFields";
 import { matchSNPsInBatches } from "./snpMatching";
 import { searchSNPs, type SNPSearchFilters } from "./snpSearch";
 import { prepareReferenceColumns } from "./referenceColumns";
+import { ReferenceStore } from "./referenceStore";
+import { mergeReferenceMatches } from "./referenceMatching";
+import type { ReferenceDownloadProgress } from "../types/annotations";
+import type { ReferenceLocation } from "./referenceQueries";
+
+let sqlModulePromise: Promise<SqlJsStatic> | null = null;
+function getSqlModule(): Promise<SqlJsStatic> {
+  sqlModulePromise ??= initSqlJs({ locateFile: (file) => (file.endsWith(".wasm") ? sqlWasmUrl : file) });
+  return sqlModulePromise;
+}
+const referenceStore = new ReferenceStore(async (bytes) => new (await getSqlModule()).Database(bytes));
 
 /**
  * Worker state - holds the loaded database
@@ -275,10 +286,7 @@ const workerApi = {
 
       // Initialize SQL.js
       onProgress(10);
-      const SQL = await initSqlJs({
-        // Keep the browser JS entry and its matching WASM binary from the same package version.
-        locateFile: (file) => (file.endsWith(".wasm") ? sqlWasmUrl : file),
-      });
+      const SQL = await getSqlModule();
 
       onProgress(30);
 
@@ -329,7 +337,17 @@ const workerApi = {
       throw new Error("Database not loaded. Call loadDatabase first.");
     }
 
-    return matchSNPsInBatches(db, snpsTableColumns, genotypes, onProgress);
+    const snpediaMatches = await matchSNPsInBatches(db, snpsTableColumns, genotypes, (current, total) =>
+      onProgress(Math.round((current / Math.max(total, 1)) * genotypes.length * 0.7), genotypes.length),
+    );
+    const { summaries } = await referenceStore.match(
+      genotypes,
+      (current, total) =>
+        onProgress(Math.round(genotypes.length * (0.7 + (0.3 * current) / Math.max(total, 1))), genotypes.length),
+      true,
+    );
+    onProgress(genotypes.length, genotypes.length);
+    return mergeReferenceMatches(genotypes, snpediaMatches, summaries);
   },
 
   /**
@@ -349,9 +367,80 @@ const workerApi = {
   /**
    * Search/browse SNPs with filtering
    */
-  async searchSNPs(filters: SNPSearchFilters) {
+  async searchSNPs(filters: SNPSearchFilters): Promise<{ results: SNPRecord[]; total: number }> {
+    if (filters.referencePackId) {
+      const page = await referenceStore.search(filters.referencePackId, filters);
+      const pack = referenceStore.getStates().find((state) => state.pack.id === filters.referencePackId)?.pack;
+      return {
+        total: page.total,
+        results: page.annotations.map((annotation) => ({
+          rsid:
+            annotation.rsid ||
+            (annotation.chromosome && annotation.position
+              ? `${annotation.chromosome}:${annotation.position}${annotation.alt ? ` ${annotation.ref || "?"}>${annotation.alt}` : ""}`
+              : annotation.gene || annotation.id),
+          referenceKey: `${annotation.source}:${annotation.id}`,
+          referenceSource: annotation.source,
+          sourceUrl: annotation.url,
+          content: annotation.summary || annotation.title,
+          gene: annotation.gene,
+          chromosome: annotation.chromosome,
+          position: annotation.position?.toString(),
+          annotations: [
+            {
+              ...annotation,
+              fields: {
+                ...annotation.fields,
+                sourceVersion: pack?.version ?? "",
+                referenceBuiltAt: pack?.builtAt ?? "",
+                upstreamRelease: pack?.sourceRelease ?? null,
+              },
+              matchType: annotation.scope === "gene" ? ("gene" as const) : ("locus" as const),
+              matchReason: "Reference evidence; no uploaded genotype is being interpreted here.",
+            },
+          ],
+        })),
+      };
+    }
+    if (!filters.referenceExport) referenceStore.cancelSearch();
     if (!db) throw new Error("Database not loaded. Call loadDatabase first.");
     return searchSNPs(db, snpsTableColumns, filters);
+  },
+
+  async initializeReferenceCatalog(manifestUrl: string) {
+    return referenceStore.initialize(manifestUrl);
+  },
+  getReferenceStates() {
+    return referenceStore.getStates();
+  },
+  async downloadReferencePack(packId: string, onProgress: (progress: ReferenceDownloadProgress) => void) {
+    return referenceStore.download(packId, onProgress);
+  },
+  async removeReferencePack(packId: string) {
+    return referenceStore.remove(packId);
+  },
+  async clearReferencePacks() {
+    return referenceStore.clear();
+  },
+  cancelReferenceSearch(searchId?: string) {
+    referenceStore.cancelSearch(searchId);
+  },
+  async setReferenceEnabled(packId: string, enabled: boolean) {
+    return referenceStore.setEnabled(packId, enabled);
+  },
+  async getReferenceAnnotations(rsid: string, location?: ReferenceLocation) {
+    return referenceStore.lookup(rsid, location);
+  },
+  async getMatchedAnnotations(user: UserGenotype, ambiguous = false) {
+    const { evidence } = await referenceStore.match([user], () => undefined);
+    const entries = evidence.get(user.rsid.toLowerCase()) ?? [];
+    return ambiguous
+      ? entries.map((annotation) => ({
+          ...annotation,
+          matchType: "unresolved" as const,
+          matchReason: "This file contains conflicting calls or coordinates for the same variant.",
+        }))
+      : entries;
   },
 };
 

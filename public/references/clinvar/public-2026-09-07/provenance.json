@@ -1,0 +1,15 @@
+{
+  "fetchedAt": "2026-09-07T22:14:39Z",
+  "urls": [
+    "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz"
+  ],
+  "coverage": "Sample: first 200 records of ClinVar VCF. GRCh38; not genome-wide coverage.",
+  "inputs": [
+    {
+      "name": "clinvar-sample.vcf",
+      "bytes": 81322,
+      "sha256": "0a2d304914133c7fc5b864975499429234f3b7286e16c43b1aa12f501521baa2"
+    }
+  ],
+  "sourceRelease": "VCF 2026-09-05"
+}

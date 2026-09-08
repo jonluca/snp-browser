@@ -1,0 +1,52 @@
+{
+  "routing": {
+    "algorithm": "fnv1a-double-v1",
+    "bitCount": 1040,
+    "hashes": 7,
+    "bits": "AAEAAIoACAAAIAEAAAAAAQAAAQAAgAAAAAQAgCAAAIgAAAAAAAAQAAAAAEAAAAACBAAQAAAwAAAAAAAAAAAAAAACAAgQAqAACgAEAABAAAAAAAAAQAAIAABAAAAAAIAAIAAAAAAAQAAEAAAAAAAYAAAQAEAAAAAABAECAAAABAAAAg=="
+  },
+  "entries": [
+    {
+      "key": "r:rs123",
+      "h1": 4199639182,
+      "h2": 591235697,
+      "positions": [622, 223, 80, 977, 834, 691, 548]
+    },
+    {
+      "key": "r:rs429358",
+      "h1": 2832624309,
+      "h2": 3077856309,
+      "positions": [229, 202, 175, 404, 377, 350, 579]
+    },
+    {
+      "key": "l:GRCh37:1:100",
+      "h1": 1650435319,
+      "h2": 4047191199,
+      "positions": [39, 822, 565, 308, 51, 834, 577]
+    },
+    {
+      "key": "l:GRCh38:MT:16569",
+      "h1": 1904800704,
+      "h2": 1378540155,
+      "positions": [144, 539, 678, 33, 428, 567, 962]
+    },
+    {
+      "key": "g:BRCA1",
+      "h1": 385824651,
+      "h2": 3033056909,
+      "positions": [251, 120, 773, 386, 255, 908, 521]
+    },
+    {
+      "key": "g:CYP2D6",
+      "h1": 1920920404,
+      "h2": 2094211749,
+      "positions": [884, 1033, 926, 35, 968, 77, 1010]
+    },
+    {
+      "key": "g:ÅΩ",
+      "h1": 1207005833,
+      "h2": 3965454901,
+      "positions": [553, 718, 883, 8, 429, 594, 759]
+    }
+  ]
+}

@@ -2,7 +2,7 @@
 
 A high-performance web application for browsing and analyzing Single Nucleotide Polymorphism (SNP) data from multiple DNA testing providers. Built with modern web technologies to handle large genomic datasets efficiently in the browser.
 
-**Privacy-first**: No data is sent to any server; all processing is done locally on your machine.
+**Privacy-first**: Personal genetic data stays on your device. The app downloads public reference files and processes your DNA locally in browser workers.
 
 **Multi-format support**: Works with DNA data from 23andMe, AncestryDNA, MyHeritage, FamilyTreeDNA, and more.
 
@@ -14,7 +14,15 @@ A high-performance web application for browsing and analyzing Single Nucleotide 
 
 The original data is originally based on a scrape from [https://github.com/jaykobdetar/SNPedia-Scraper](https://github.com/jaykobdetar/SNPedia-Scraper). The database schema was slightly modified to make querying it easier.
 
-The SNP database is hosted at https://static.snpbrowser.com/snp-2025113.db
+The SNP database is hosted at https://static.snpbrowser.com/snpedia.db
+
+Additional references are available from **Data sources**: ClinVar, dbSNP, gnomAD, GWAS Catalog, Ensembl VEP, ClinPGx/PharmGKB, and CPIC. Each download shows its actual coverage, release, size, and attribution. Some packs cover selected public variants or chromosomes; an absent annotation does not mean a variant is absent from the original source.
+
+Reference packs are versioned, checksum-verified SQLite shards stored compressed in the browser Cache API. Downloads are explicit and contain whole public packs; searches and matching never send a person's variants to an annotation service. After downloading, queries expand one local shard at a time. Compression preserves every annotation and source field. Browser storage limits and eviction can require a fresh download.
+
+When replacing older uncompressed packs, reload the app and use **Data sources → Clear reference downloads** before downloading the new versions. This frees older cached files as well as current references, while retaining SNPedia and your open analysis. Select the sources you want to download again.
+
+See [reference preparation and publishing](docs/reference-data.md) for reproducible source adapters, coverage, source terms, and static deployment. Binary reference files are excluded from Git. Prepare them before a local production build, or set `VITE_REFERENCE_MANIFEST_URL` to a published public catalog with CORS access. The build copies only the selected local release assets and their provenance; it does not bundle intermediate releases.
 
 ## Features
 
@@ -29,6 +37,8 @@ The SNP database is hosted at https://static.snpbrowser.com/snp-2025113.db
   - ZIP archives containing supported raw data files
 - **Automatic Format Detection**: Smart detection system identifies file format with confidence scoring
 - **Client-side SQLite**: Process genomic data entirely in the browser using sql.js
+- **Independent reference sources**: Browse and match downloaded public datasets beyond SNPedia, with assembly, allele, review, population, study, and gene–drug context kept distinct
+- **Conservative matching**: Exact allele evidence requires compatible assembly, position, strand, and bases. Unknown or conflicting identity remains unresolved; gene–drug context does not imply a personal drug recommendation
 - **Virtualized Rendering**: Efficiently display large datasets with react-virtuoso
 - **Web Worker Processing**: Offload heavy computations using Comlink for a smooth UI experience
 - **Modern React**: Built with React 19 and the React Compiler for optimal performance
@@ -48,6 +58,8 @@ The SNP database is hosted at https://static.snpbrowser.com/snp-2025113.db
 ## Development
 
 ### Quick Start
+
+Before building, [prepare the reference assets](docs/reference-data.md) or set `VITE_REFERENCE_MANIFEST_URL` to a published public catalog with CORS access. Reference binaries are excluded from Git, and the start scripts do not download or prepare them.
 
 For the fastest setup, use the included start scripts that automatically install bun (if needed), install dependencies, and build/run the production version:
 
@@ -145,7 +157,7 @@ bun run prod
 - **Extensions**: `.vcf`, `.gvcf`, `.g.vcf`, `.vcf.gz`, `.g.vcf.gz`
 - **Structure**: `#CHROM POS ID REF ALT QUAL FILTER INFO FORMAT SAMPLE`
 - **Example**: `1    82154    rs4477212    A    G    .    PASS    .    GT    0/1`
-- **Note**: gVCF reference blocks and indels are skipped; SNP records with rsIDs are matched against SNPedia.
+- **Note**: gVCF reference blocks and indels are skipped. SNP records with rsIDs can match SNPedia. Records with a missing ID (`.`) are retained when the header explicitly declares GRCh37 or GRCh38 and the record has supported chromosome coordinates and a SNP alternate. Their display ID includes the build, chromosome, position, REF, and ALT; downloaded reference sources match them by coordinates. Missing-ID records without a known build are skipped.
 
 The application automatically detects the file format when you upload your DNA data.
 For provider downloads delivered as ZIP archives, upload the ZIP directly; the app will use the first supported raw data file inside.

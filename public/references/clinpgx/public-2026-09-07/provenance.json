@@ -1,0 +1,15 @@
+{
+  "fetchedAt": "2026-09-07T22:14:50Z",
+  "urls": [
+    "https://api.clinpgx.org/v1/download/file/data/clinicalAnnotations.zip"
+  ],
+  "coverage": "Complete clinical annotation metadata table from CREATED_2025-07-05.txt. Genotype-specific allele text and full evidence tables are not imported. No individual drug response inferred.",
+  "inputs": [
+    {
+      "name": "clinical_annotations.tsv",
+      "bytes": 852045,
+      "sha256": "f548f25c7b5930ca250e7640f5a3531cfcc6e89048b916a7f115ae390fcc66f4"
+    }
+  ],
+  "sourceRelease": "Clinical annotation metadata archive 2025-07-05"
+}

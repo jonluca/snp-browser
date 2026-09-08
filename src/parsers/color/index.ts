@@ -1,3 +1,4 @@
+import { applyFileMetadata, detectFileMetadata } from "../metadata";
 import type { DNAParser, ParserMetadata, ProgressCallback, ValidationResult } from "../types";
 import type { ParseResult, UserGenotype } from "../../types/snp";
 
@@ -58,7 +59,7 @@ export class ParserColor implements DNAParser {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
-      if (!line) {
+      if (!line || line.startsWith("#")) {
         skippedLines++;
         continue;
       }
@@ -93,12 +94,15 @@ export class ParserColor implements DNAParser {
       }
     }
 
-    return {
-      genotypes,
-      totalLines,
-      skippedLines,
-      errors,
-    };
+    return applyFileMetadata(
+      {
+        genotypes,
+        totalLines,
+        skippedLines,
+        errors,
+      },
+      detectFileMetadata(content),
+    );
   }
 
   private isHeader(parts: string[]): boolean {

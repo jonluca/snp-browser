@@ -1,18 +1,25 @@
 import { useEffect, useRef, useState } from "react";
-import { useInfiniteQuery, useMutation } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery } from "@tanstack/react-query";
 import { twMerge } from "tailwind-merge";
 import { Virtuoso } from "react-virtuoso";
 import type { Remote } from "comlink";
 import type { SNPRecord } from "../types/snp";
 import type { SNPMatcherWorkerApi } from "../workers/snpMatcher.worker";
-import type { SNPSearchSort } from "../workers/snpSearch";
+import { MAX_REFERENCE_EXPORT_ROWS, type ReferenceSearchMode, type SNPSearchSort } from "../workers/snpSearch";
 import { buildCsv, downloadCsvFile, type CsvColumn } from "../utils/csvExport";
+import { buildReferenceCsv } from "../utils/referenceCsvExport";
 import { extractSnpediaFields } from "../utils/snpediaFields";
 import { getVariantPresentation } from "../utils/variantPresentation";
 import { WikiContent } from "./WikiContent";
+import { AnnotationDetails } from "./AnnotationDetails";
+import type { ReferencePackState } from "../types/annotations";
+import { ANNOTATION_SOURCE_NAMES, safeReferenceUrl } from "../utils/annotationPresentation";
 
 interface SNPBrowserProps {
   workerApi: Remote<SNPMatcherWorkerApi>;
+  referencePacks: ReferencePackState[];
+  referenceRevision: number;
+  onManageReferences: () => void;
 }
 interface SNPBrowserExportRow {
   rsid: string;
@@ -71,7 +78,7 @@ const SNP_BROWSER_EXPORT_COLUMNS: CsvColumn<SNPBrowserExportRow>[] = [
   { header: "Summary", value: (snp) => snp.summary },
   { header: "Clinical Significance", value: (snp) => snp.clinicalSignificance },
   { header: "Disease", value: (snp) => snp.disease },
-  { header: "SNPedia URL", value: (snp) => snp.snpediaUrl },
+  { header: "Source URL", value: (snp) => snp.snpediaUrl },
   { header: "Scraped At", value: (snp) => snp.scrapedAt },
 ];
 
@@ -84,10 +91,12 @@ function toExportRow(snp: SNPRecord): SNPBrowserExportRow {
     geneSymbol: fields.geneSymbol,
     magnitude: fields.magnitude,
     repute: fields.repute,
-    summary: fields.summary,
+    summary: fields.summary || (snp.referenceSource ? snp.content : undefined),
     clinicalSignificance: fields.clinicalSignificance,
     disease: fields.disease,
-    snpediaUrl: `https://www.snpedia.com/index.php/${snp.rsid}`,
+    snpediaUrl:
+      safeReferenceUrl(snp.sourceUrl) ||
+      (snp.referenceSource ? "" : `https://www.snpedia.com/index.php/${encodeURIComponent(snp.rsid)}`),
     scrapedAt: snp.scraped_at,
   };
 }
@@ -104,10 +113,17 @@ function useDebouncedFilters(filters: Filters) {
   return settled;
 }
 
-export function SNPBrowser({ workerApi }: SNPBrowserProps) {
+const recordKey = (snp: SNPRecord) => snp.referenceKey || snp.rsid;
+
+export function SNPBrowser({ workerApi, referencePacks, referenceRevision, onManageReferences }: SNPBrowserProps) {
+  const [chosenPackId, setChosenPackId] = useState("");
+  const selectedPack = referencePacks.find((state) => state.pack.id === chosenPackId && state.status === "ready");
+  const referencePackId = selectedPack?.pack.id;
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const queryFilters = useDebouncedFilters(filters);
   const [sortBy, setSortBy] = useState<SNPSearchSort>("relevance");
+  const [sourceSearchMode, setSourceSearchMode] = useState<ReferenceSearchMode>("variant");
+  const referenceSearchMode = referencePackId ? sourceSearchMode : undefined;
   const [showFilters, setShowFilters] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -126,9 +142,27 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
     fetchNextPage,
     refetch,
   } = useInfiniteQuery({
-    queryKey: ["snp-browser", queryFilters, sortBy],
+    queryKey: ["snp-browser", queryFilters, sortBy, referencePackId, referenceSearchMode, referenceRevision],
     initialPageParam: 0,
-    queryFn: ({ pageParam }) => workerApi.searchSNPs({ ...queryFilters, sortBy, limit: PAGE_SIZE, offset: pageParam }),
+    retry: false,
+    queryFn: async ({ pageParam, signal }) => {
+      const referenceSearchId = referencePackId ? crypto.randomUUID() : undefined;
+      const cancel = () => {
+        void workerApi.cancelReferenceSearch(referenceSearchId).catch(() => undefined);
+      };
+      if (referenceSearchId) signal.addEventListener("abort", cancel, { once: true });
+      return workerApi
+        .searchSNPs({
+          ...queryFilters,
+          referencePackId,
+          referenceSearchMode,
+          referenceSearchId,
+          sortBy,
+          limit: PAGE_SIZE,
+          offset: pageParam,
+        })
+        .finally(() => signal.removeEventListener("abort", cancel));
+    },
     getNextPageParam: (lastPage, pages) => {
       const loaded = pages.reduce((count, page) => count + page.results.length, 0);
       return lastPage.results.length > 0 && loaded < lastPage.total ? loaded : undefined;
@@ -136,9 +170,43 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
   });
   const results = isDebouncing ? [] : (data?.pages.flatMap((page) => page.results) ?? []);
   const total = isDebouncing ? 0 : (data?.pages[0]?.total ?? 0);
+  const sourceExportTooLarge = Boolean(referencePackId && total > MAX_REFERENCE_EXPORT_ROWS);
   const isSearching = isPending || isDebouncing;
-  const selectedSNP = results.find((snp) => snp.rsid === selectedId) ?? results[0] ?? null;
+  const selectedSNP = results.find((snp) => recordKey(snp) === selectedId) ?? results[0] ?? null;
+  const selectedSourceUrl = selectedSNP
+    ? safeReferenceUrl(selectedSNP.sourceUrl) ||
+      (!selectedSNP.referenceSource
+        ? `https://www.snpedia.com/index.php/${encodeURIComponent(selectedSNP.rsid)}`
+        : null)
+    : null;
   const selectedFields = selectedSNP ? getVariantPresentation(selectedSNP) : null;
+  const selectedAnnotation = selectedSNP?.annotations?.[0];
+  const selectedLocation =
+    selectedAnnotation?.assembly && selectedAnnotation.chromosome && selectedAnnotation.position
+      ? {
+          assembly: selectedAnnotation.assembly,
+          chromosome: selectedAnnotation.chromosome,
+          position: selectedAnnotation.position,
+        }
+      : undefined;
+  const referenceDetails = useQuery({
+    queryKey: ["reference-annotations", selectedSNP?.rsid, selectedLocation, referenceRevision],
+    enabled: Boolean(
+      selectedSNP &&
+      (/^rs\d+$/i.test(selectedSNP.rsid) || selectedLocation) &&
+      referencePacks.some((state) => state.enabled),
+    ),
+    queryFn: () => workerApi.getReferenceAnnotations(selectedSNP!.rsid, selectedLocation),
+    retry: false,
+  });
+  const annotations = [
+    ...new Map(
+      [...(selectedSNP?.annotations ?? []), ...(referenceDetails.data ?? [])].map((annotation) => [
+        `${annotation.source}:${annotation.id}`,
+        annotation,
+      ]),
+    ).values(),
+  ];
   const activeFilters = (Object.entries(filters) as [keyof Filters, string][]).filter(([, value]) => value.trim());
   const advancedCount = activeFilters.filter(([key]) => key !== "searchTerm").length;
   const {
@@ -148,13 +216,24 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
     reset: resetExport,
   } = useMutation({
     mutationFn: async () => {
-      const { results: exportedSNPs } = await workerApi.searchSNPs({
+      if (referencePackId && total > MAX_REFERENCE_EXPORT_ROWS) {
+        throw new Error("Source CSV exports support up to 100,000 records. Narrow the search before exporting.");
+      }
+      const { results: exportedSNPs, total: exportedTotal } = await workerApi.searchSNPs({
         ...queryFilters,
+        referencePackId,
+        referenceSearchMode,
+        referenceExport: true,
         sortBy,
-        limit: total,
+        limit: referencePackId ? Math.min(total, MAX_REFERENCE_EXPORT_ROWS) : total,
         offset: 0,
       });
-      downloadCsvFile("snp-browser-results.csv", buildCsv(exportedSNPs.map(toExportRow), SNP_BROWSER_EXPORT_COLUMNS));
+      if (exportedSNPs.length !== exportedTotal)
+        throw new Error("The export did not include every matching record. Retry the export.");
+      const csv = referencePackId
+        ? buildReferenceCsv(exportedSNPs, selectedPack?.pack)
+        : buildCsv(exportedSNPs.map(toExportRow), SNP_BROWSER_EXPORT_COLUMNS);
+      downloadCsvFile("snp-browser-results.csv", csv);
     },
   });
 
@@ -186,7 +265,7 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
 
   useEffect(() => {
     if (detailPaneRef.current) detailPaneRef.current.scrollTop = 0;
-  }, [selectedSNP?.rsid]);
+  }, [selectedSNP?.rsid, selectedSNP?.referenceKey]);
 
   const updateFilter = (key: keyof Filters, value: string) => {
     setFilters((current) => (current[key] === value ? current : { ...current, [key]: value }));
@@ -221,14 +300,15 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
     <section className="space-y-4" aria-label="Reference explorer">
       <div className={twMerge("flex flex-wrap items-end justify-between gap-4", detailOpen && "hidden lg:flex")}>
         <div>
-          <p className="section-label mb-2">SNPedia reference</p>
+          <p className="section-label mb-2">{selectedPack?.pack.name ?? "SNPedia"} reference</p>
           <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">Explore the database</h1>
           <p className="mt-2 text-sm text-slate-500">Find a variant, follow a gene, or explore a condition.</p>
         </div>
         <button
           type="button"
           onClick={() => exportResults()}
-          disabled={isSearching || isExporting || total === 0}
+          disabled={isSearching || isExporting || total === 0 || sourceExportTooLarge}
+          aria-describedby={sourceExportTooLarge ? "reference-export-limit" : undefined}
           className="secondary-button inline-flex items-center gap-2"
         >
           <svg aria-hidden="true" viewBox="0 0 20 20" className="size-4 fill-none stroke-current" strokeWidth="1.5">
@@ -238,7 +318,79 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
         </button>
       </div>
 
+      {sourceExportTooLarge && !detailOpen && (
+        <p id="reference-export-limit" className="text-xs leading-5 text-slate-500">
+          Source CSV exports support up to {MAX_REFERENCE_EXPORT_ROWS.toLocaleString()} records. Search for a variant,
+          gene, or apply filters to narrow these results before exporting.
+        </p>
+      )}
+
       <div className={twMerge("surface-panel p-3 sm:p-4", detailOpen && "hidden lg:block")}>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <label className="flex min-w-0 items-center gap-3 text-xs font-medium text-slate-600">
+            Dataset
+            <select
+              aria-label="Reference dataset"
+              className="field-control max-w-64 py-2 text-sm"
+              value={referencePackId ?? ""}
+              onChange={(event) => {
+                setChosenPackId(event.target.value);
+                setSortBy("relevance");
+                setSelectedId(null);
+                setDetailOpen(false);
+              }}
+            >
+              <option value="">SNPedia</option>
+              {referencePacks.map((state) => (
+                <option key={state.pack.id} value={state.pack.id} disabled={state.status !== "ready"}>
+                  {state.pack.name}
+                  {state.status !== "ready" ? " · download first" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="button"
+            onClick={onManageReferences}
+            className="cursor-pointer text-xs font-semibold text-brand-700 hover:underline"
+          >
+            Manage data sources ↗
+          </button>
+        </div>
+        {selectedPack && (
+          <p className="mb-3 text-xs leading-5 text-slate-500">
+            {selectedPack.pack.coverage} · Release {selectedPack.pack.version}
+          </p>
+        )}
+        {selectedPack && (
+          <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <label className="flex items-center gap-2 text-xs font-medium text-slate-600">
+              Search within
+              <select
+                aria-label="Reference search mode"
+                value={sourceSearchMode}
+                onChange={(event) => {
+                  setSourceSearchMode(event.target.value as ReferenceSearchMode);
+                  setSelectedId(null);
+                  setDetailOpen(false);
+                  if (!isExporting) resetExport();
+                }}
+                className="field-control w-auto py-2 text-xs"
+              >
+                <option value="variant">Variant ID</option>
+                <option value="gene">Gene</option>
+                <option value="all-fields">All fields</option>
+              </select>
+            </label>
+            <p className="text-xs leading-5 text-slate-500">
+              {sourceSearchMode === "variant"
+                ? "Enter a complete rsID, such as rs429358."
+                : sourceSearchMode === "gene"
+                  ? "Enter a complete gene symbol, such as APOE."
+                  : "Searches every downloaded file in this dataset."}
+            </p>
+          </div>
+        )}
         <div className="flex items-center gap-2 sm:gap-3">
           <div className="relative min-w-0 flex-1">
             <svg
@@ -254,7 +406,15 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
               ref={searchRef}
               type="search"
               aria-label="Search SNP database"
-              placeholder="Search rsID, gene, or condition…"
+              placeholder={
+                !referencePackId
+                  ? "Search rsID, gene, or condition…"
+                  : sourceSearchMode === "variant"
+                    ? "Enter a variant ID…"
+                    : sourceSearchMode === "gene"
+                      ? "Enter a gene symbol…"
+                      : "Search all source fields…"
+              }
               value={filters.searchTerm}
               onChange={(event) => updateFilter("searchTerm", event.target.value)}
               className="field-control pl-10 pr-10"
@@ -390,7 +550,9 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
         <div className={twMerge("workspace-list flex-col", detailOpen ? "hidden lg:flex" : "flex")}>
           <div className="flex items-center justify-between gap-2 border-b border-slate-200/70 px-4 py-3">
             <p aria-live="polite" className="text-xs font-medium text-slate-500">
-              {isSearching ? "Searching…" : `${total.toLocaleString()} variant${total !== 1 ? "s" : ""}`}
+              {isSearching
+                ? "Searching…"
+                : `${total.toLocaleString()} ${referencePackId ? "record" : "variant"}${total !== 1 ? "s" : ""}`}
             </p>
             <select
               aria-label="Sort reference results"
@@ -402,7 +564,9 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
               }}
               className="max-w-36 cursor-pointer rounded-md border-0 bg-transparent py-1 text-xs font-medium text-slate-600 focus:outline-brand-500"
             >
-              <option value="relevance">Best match</option>
+              <option value="relevance">
+                {referencePackId && activeFilters.length === 0 ? "Source order" : "Best match"}
+              </option>
               <option value="rsid-asc">RSID: A–Z</option>
               <option value="rsid-desc">RSID: Z–A</option>
             </select>
@@ -439,26 +603,26 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
               </div>
             ) : (
               <Virtuoso
-                key={JSON.stringify([queryFilters, sortBy])}
+                key={JSON.stringify([queryFilters, sortBy, referencePackId, referenceSearchMode])}
                 style={{ height: "100%" }}
                 data={results}
-                computeItemKey={(_, snp) => snp.rsid}
+                computeItemKey={(_, snp) => recordKey(snp)}
                 endReached={hasNextPage ? loadMore : undefined}
                 itemContent={(_, snp) => {
                   const fields = getVariantPresentation(snp);
                   return (
                     <button
-                      id={`reference-${snp.rsid}`}
+                      id={`reference-${recordKey(snp)}`}
                       type="button"
                       className="variant-row"
-                      aria-pressed={selectedSNP?.rsid === snp.rsid}
+                      aria-pressed={Boolean(selectedSNP && recordKey(selectedSNP) === recordKey(snp))}
                       onClick={() => {
-                        setSelectedId(snp.rsid);
+                        setSelectedId(recordKey(snp));
                         setDetailOpen(true);
                       }}
                     >
                       <div className="mb-2 flex items-center justify-between gap-2">
-                        <span className="font-mono text-sm font-semibold tracking-tight text-slate-900">
+                        <span className="min-w-0 font-mono text-sm font-semibold tracking-tight text-slate-900 [overflow-wrap:anywhere]">
                           {snp.rsid}
                         </span>
                         {fields.geneSymbol && (
@@ -514,19 +678,21 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
                   <h2
                     ref={detailHeadingRef}
                     tabIndex={-1}
-                    className="font-mono text-2xl font-semibold tracking-tight text-slate-950 focus:outline-none sm:text-3xl"
+                    className="font-mono text-2xl font-semibold tracking-tight text-slate-950 [overflow-wrap:anywhere] focus:outline-none sm:text-3xl"
                   >
                     {selectedSNP.rsid}
                   </h2>
                 </div>
-                <a
-                  href={`https://www.snpedia.com/index.php/${encodeURIComponent(selectedSNP.rsid)}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
-                >
-                  View on SNPedia <span aria-hidden="true">↗</span>
-                </a>
+                {selectedSourceUrl && (
+                  <a
+                    href={selectedSourceUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 hover:underline"
+                  >
+                    View source <span aria-hidden="true">↗</span>
+                  </a>
+                )}
               </div>
               {selectedFields.summary && (
                 <p className="mt-5 text-lg leading-7 text-slate-700">{selectedFields.summary}</p>
@@ -538,12 +704,14 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
                     {selectedFields.geneSymbol || "Not recorded"}
                   </dd>
                 </div>
-                <div>
-                  <dt className="mb-1 text-xs text-slate-400">Clinical significance</dt>
-                  <dd className="break-words font-medium text-slate-800">
-                    {selectedFields.clinicalSignificance || "Not classified"}
-                  </dd>
-                </div>
+                {!selectedSNP.referenceSource && (
+                  <div>
+                    <dt className="mb-1 text-xs text-slate-400">Clinical significance</dt>
+                    <dd className="break-words font-medium text-slate-800">
+                      {selectedFields.clinicalSignificance || "Not classified"}
+                    </dd>
+                  </div>
+                )}
                 {selectedSNP.chromosome && (
                   <div>
                     <dt className="mb-1 text-xs text-slate-400">Chromosome</dt>
@@ -560,12 +728,19 @@ export function SNPBrowser({ workerApi }: SNPBrowserProps) {
                   </div>
                 )}
               </dl>
-              <div className="border-t border-slate-100 pt-5">
-                <h3 className="mb-4 text-sm font-semibold text-slate-900">Reference notes</h3>
-                <WikiContent content={selectedSNP.content} hideSummary={Boolean(selectedFields.summary)} />
-              </div>
+              {!selectedSNP.referenceSource && (
+                <div className="border-t border-slate-100 pt-5">
+                  <h3 className="mb-4 text-sm font-semibold text-slate-900">Reference notes</h3>
+                  <WikiContent content={selectedSNP.content} hideSummary={Boolean(selectedFields.summary)} />
+                </div>
+              )}
+              <AnnotationDetails
+                annotations={annotations}
+                loading={referenceDetails.isFetching}
+                error={referenceDetails.error?.message}
+              />
               <p className="mt-8 border-t border-slate-100 pt-4 text-xs leading-5 text-slate-400">
-                Source: SNPedia
+                Source: {selectedPack ? ANNOTATION_SOURCE_NAMES[selectedPack.pack.source] : "SNPedia"}
                 {selectedSNP.scraped_at && !Number.isNaN(Date.parse(selectedSNP.scraped_at))
                   ? ` · Retrieved ${new Date(selectedSNP.scraped_at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`
                   : ""}

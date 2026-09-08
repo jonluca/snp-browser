@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T22:14:41Z",
+  "packs": [
+    {
+      "name": "dbSNP",
+      "description": "Reference variant identifiers, assembly-specific alleles, and merged identifiers.",
+      "homepage": "https://www.ncbi.nlm.nih.gov/snp/",
+      "license": "NCBI molecular data use policy",
+      "licenseUrl": "https://www.ncbi.nlm.nih.gov/home/about/policies/",
+      "attribution": "dbSNP, National Center for Biotechnology Information, U.S. National Library of Medicine. Converted to an indexed local reference format.",
+      "id": "dbsnp",
+      "source": "dbsnp",
+      "version": "public-2026-09-07",
+      "builtAt": "2026-09-07T22:14:41Z",
+      "coverage": "Sample: five fixed public reference identifiers (rs429358, rs7412, rs4244285, rs1799853, rs4149056). Not a complete release.",
+      "recordCount": 18,
+      "shards": [
+        {
+          "url": "/references/dbsnp/public-2026-09-07/part-00001.sqlite",
+          "bytes": 49152,
+          "sha256": "cb9859ecf0478c6de601365c5786c75f7edcb4633abc4deb85a563a70d932ca6",
+          "records": 18,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 1024,
+            "hashes": 7,
+            "bits": "AAA6AIDlCSAQAAQUwAQAAIMAGJQKIgYAAQAjAQaAAQAIAAEAIYgRiQhgAUGAgACIECASAAAAAEAA6AAEgqBJKIQAAAAhASByUACACCASFAACAAAAABBgBBrAAQIABgQggKIQgSAMYFAEDhNAIAECcAAiEAQGAIVAwABJRBAGaWY="
+          }
+        }
+      ],
+      "sourceRelease": "RefSNP API snapshot 2026-09-07"
+    }
+  ]
+}

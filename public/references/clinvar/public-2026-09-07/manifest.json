@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T22:14:39Z",
+  "packs": [
+    {
+      "name": "ClinVar",
+      "description": "Submitted clinical classifications, conditions, review status, and evaluation dates.",
+      "homepage": "https://www.ncbi.nlm.nih.gov/clinvar/",
+      "license": "NCBI molecular data use policy",
+      "licenseUrl": "https://www.ncbi.nlm.nih.gov/home/about/policies/",
+      "attribution": "ClinVar, National Center for Biotechnology Information, U.S. National Library of Medicine. Converted to an indexed local reference format; original assertions retained.",
+      "id": "clinvar",
+      "source": "clinvar",
+      "version": "public-2026-09-07",
+      "builtAt": "2026-09-07T22:14:39Z",
+      "coverage": "Sample: first 200 records of ClinVar VCF. GRCh38; not genome-wide coverage.",
+      "recordCount": 200,
+      "shards": [
+        {
+          "url": "/references/clinvar/public-2026-09-07/part-00001.sqlite",
+          "bytes": 323584,
+          "sha256": "74594d1b6fbe7bcfe7c891759924b7521ffdb7e9d5505b756282749481af8d33",
+          "records": 200,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 6784,
+            "hashes": 7,
+            "bits": "qAkLAgmGgAyRYwKjE4AC6IUK0GGCHcAAAxEsgV4URAwWAjACKCJiAM0rIAcI4ACYTKQQOukEFJjYIAQMUSaQDaAgaCTkEYSQAFggJlAUVYUJaBKZCw4DEk4gxNGcAWBZggOFgRfQCHJwACstJgIgIiEwBDXKEq+ZEICNA8AXpMDjEBQSg3DZYAC4ASSOAZkBiQGCyiKEEAQBk2QMBEy4RAAHQCKoBEWAAAsSMBwINQGQiQEAgyAEQYAylBTEQkIAELBCmMFSJCURsYNIQWRgEUniQUnAggGaSIiaQ1WJCY6AhCFSCQBG5EEZsECICShACQCiLCBhgIDIAIQBZiyMADEAWAZHAAKQCIQyEgKASDeQSxgkyAiooIIECBIIAgKRCWQBkkKEAEwE7gdKE3QAIBwp0QoIA0BTgQGFUQEIYRgCcDBaEnjhoE4dHESGCAjbNahAgCQxBCMdCWgEwgygIBwugAEYGCVahUABC2EQsYUAZEAYlUITECiBFzoKNGOAAAYi0gAM8gAYSgYSiSBASkIWEAwACEwKIIijsQLKG6hAgIQJCigUwiIcKoAhJAUkiKVgwQgIFDEAAylJlAAI7KgLSYJEIASQYGik9KQxNBEAAIAZ4UIKo80TiMPebDgzVQGMARB5DNzEzRBBQDgtABuIlAIIQAAdkJOQ0KDBtEG5pCDFkJuAArhkBxhBDEGAJ0hFEAEVmcgAmUMARKACEEgAyl0AQAhFASBRFAIwZWKpAhAiFBhiYFgABBMKhZAEAAUAEigSNQo2XgiKBcUVYcQCMFwAQAhgEPQIQPA65AcAQYI6cBMEARIEQxSxmIshBwEAEuEiSOKwAUBFCCAEjwwSgSxQKQBES1IpQwUKAdIBgYFgTASsCARIOIMAGAQMNxhGpASOQaAAAAAQYYgYBCxCKKlgADpABBRigMGuQdyEGuISCkokRUoxQAIiApmQJRiAQEsTAgCFEIATAkClwMgAEgQcAAQyCDFFYhkAgdACABGARC4yABgiVuGoN7ABwkEvSUCiUdQRBgGLHFEIQIo+AgA4kmAEhBAZSCLoAvB7sUAIEHwFYMIQDJSQsEAApJ0IE5wfwgEAFAQJBGEIQ8CBUAJp4AHkCBghDGEGAgA="
+          }
+        }
+      ],
+      "sourceRelease": "VCF 2026-09-05"
+    }
+  ]
+}

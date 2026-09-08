@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T22:14:50Z",
+  "packs": [
+    {
+      "name": "Ensembl VEP",
+      "description": "Gene and transcript consequences, protein changes, and source prediction annotations.",
+      "homepage": "https://www.ensembl.org/info/docs/tools/vep/index.html",
+      "license": "Ensembl data use policy; retain third-party constraints",
+      "licenseUrl": "https://www.ensembl.org/info/about/legal/disclaimer.html",
+      "attribution": "Ensembl Variant Effect Predictor, EMBL-EBI. Precomputed public reference variants; no user variants are sent to Ensembl.",
+      "id": "ensembl",
+      "source": "ensembl",
+      "version": "public-2026-09-07",
+      "builtAt": "2026-09-07T22:14:50Z",
+      "coverage": "Sample: five fixed public reference identifiers (rs429358, rs7412, rs4244285, rs1799853, rs4149056). Not a complete release.",
+      "recordCount": 323,
+      "shards": [
+        {
+          "url": "/references/ensembl/public-2026-09-07/part-00001.sqlite",
+          "bytes": 458752,
+          "sha256": "20597a40c96d01237d6c0d1fe236e279a29d4b64b715e177e45096b5f9314ed7",
+          "records": 323,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 1024,
+            "hashes": 7,
+            "bits": "AAAaYACFACAAACYAggABAAcAGIAAAgIAEAgBIQCIAAAAAAABAYAQgACAAEECCAAAECBCAQAEAECAIAAAgCAIAIAABCAgQQAyIACAAAAAAAAAAACAEABgQgjAAAgABgAAADAAiCEEAGAACBBAIAFEEAECAAAEAABCAAAIQJAeSXY="
+          }
+        }
+      ],
+      "sourceRelease": "Public VEP API snapshot 2026-09-07"
+    }
+  ]
+}

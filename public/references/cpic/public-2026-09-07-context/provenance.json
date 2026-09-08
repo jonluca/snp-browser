@@ -1,0 +1,27 @@
+{
+  "source": "cpic",
+  "format": "json",
+  "assembly": null,
+  "adapterVersion": 1,
+  "pythonVersion": "3.14.7",
+  "sqliteVersion": "3.53.4",
+  "groupedByVariant": false,
+  "filters": {
+    "minimumAF": null,
+    "passOnly": false,
+    "canonicalOnly": false
+  },
+  "inputs": [
+    {
+      "name": "cpic-pairs.json",
+      "bytes": 186603,
+      "sha256": "abed1cbc611dec7725702193a816e8209eb61ca240cad6a717d506aac6daafff"
+    }
+  ],
+  "urls": [
+    "https://api.cpicpgx.org/v1/pair_view?order=pairid&limit=500&offset=0",
+    "https://api.cpicpgx.org/v1/pair_view?order=pairid&limit=500&offset=500"
+  ],
+  "fetchedAt": "2026-09-07",
+  "sourceRelease": "Public pair_view snapshot 2026-09-07"
+}

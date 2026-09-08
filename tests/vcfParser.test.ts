@@ -80,12 +80,19 @@ test("VCF parser accepts gVCF records and skips indels", async () => {
       chromosome: "1",
       position: "250",
       genotype: "ag",
+      ref: "A",
+      alt: "G",
+      strand: "plus",
+      phased: false,
     },
     {
       rsid: "rs456",
       chromosome: "MT",
       position: "270",
       genotype: "cc",
+      ref: "C",
+      strand: "plus",
+      phased: false,
     },
   ]);
 });
@@ -137,7 +144,7 @@ test("VCF parser streams blocked gzip VCF blobs without relying on browser gzip 
   }
 });
 
-test("VCF parser skips coordinate-only records without treating them as parse failures", async () => {
+test("VCF parser skips coordinate-only records with no declared build without treating them as parse failures", async () => {
   const content = `##fileformat=VCFv4.2
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
 #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE
@@ -175,7 +182,163 @@ test("VCF parser does not interpret depth fields as a genotype when GT is absent
     await parserVCF.parse(content, () => undefined),
     await parserVCF.parseBlob(new Blob([content]), () => undefined),
   ]) {
-    expect(result.genotypes).toEqual([{ rsid: "rs456", chromosome: "1", position: "200", genotype: "ct" }]);
+    expect(result.genotypes).toEqual([
+      {
+        rsid: "rs456",
+        chromosome: "1",
+        position: "200",
+        genotype: "ct",
+        ref: "C",
+        alt: "T",
+        strand: "plus",
+        phased: false,
+      },
+    ]);
     expect(result.errors).toEqual([]);
+  }
+});
+
+test("VCF text and streaming parsing preserve reference build and called multiallelic identity", async () => {
+  const content = [
+    "##fileformat=VCFv4.2",
+    "##reference=file:///data/GRCh38.p14.fa",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+    "1\t100\trs123\tA\tC,G\t.\tPASS\t.\tGT\t2|1",
+    "1\t101\trs124\tA\tC,G\t.\tPASS\t.\tGT\t0/2",
+    "1\t102\trs125\tA\tG\t.\tPASS\t.\tGT\t0/0",
+    "1\t103\trs126\tA\tG\t.\tPASS\t.\tGT\t./.",
+    "1\t104\trs127\tAC\tG\t.\tPASS\t.\tGT\t1/1",
+  ].join("\n");
+  for (const result of [
+    await parserVCF.parse(content, () => undefined),
+    await parserVCF.parseBlob(new Blob([content]), () => undefined),
+  ]) {
+    expect(result.assembly).toBe("GRCh38");
+    expect(result.errors).toEqual([]);
+    expect(result.genotypes).toEqual([
+      {
+        rsid: "rs123",
+        chromosome: "1",
+        position: "100",
+        genotype: "cg",
+        ref: "A",
+        alt: "C,G",
+        strand: "plus",
+        phased: true,
+        assembly: "GRCh38",
+      },
+      {
+        rsid: "rs124",
+        chromosome: "1",
+        position: "101",
+        genotype: "ag",
+        ref: "A",
+        alt: "G",
+        strand: "plus",
+        phased: false,
+        assembly: "GRCh38",
+      },
+      {
+        rsid: "rs125",
+        chromosome: "1",
+        position: "102",
+        genotype: "aa",
+        ref: "A",
+        strand: "plus",
+        phased: false,
+        assembly: "GRCh38",
+      },
+      { rsid: "rs126", chromosome: "1", position: "103", genotype: "--", ref: "A", strand: "plus", assembly: "GRCh38" },
+    ]);
+  }
+});
+
+test("VCF contig build declarations survive streaming and conflicting builds remain unresolved", async () => {
+  const content = [
+    "##fileformat=VCFv4.2",
+    "##contig=<ID=1,assembly=GRCh37>",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+    "1\t100\trs123\tA\tG\t.\tPASS\t.\tGT\t0/1",
+  ].join("\n");
+  const result = await parserVCF.parseBlob(new Blob([content]), () => undefined);
+  expect(result.genotypes[0].assembly).toBe("GRCh37");
+  for (const header of ["##reference=hg38.fa\n", ""]) {
+    const unresolvedContent = header ? header + content : content.replace("##contig=<ID=1,assembly=GRCh37>\n", "");
+    const unresolved = await parserVCF.parseBlob(new Blob([unresolvedContent]), () => undefined);
+    expect(unresolved.assembly).toBeUndefined();
+    expect(unresolved.genotypes[0].assembly).toBeUndefined();
+    expect(unresolved.genotypes[0].strand).toBe("plus");
+  }
+});
+
+test("VCF text, streaming, and gzip parsing retain ID-less SNPs under stable declared-build identities", async () => {
+  const content = [
+    "##fileformat=VCFv4.2",
+    "##reference=file:///references/GRCh38.p14.fa",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+    "chr22\t000100\t.\ta\tg,<NON_REF>\t.\tPASS\t.\tGT\t0/1",
+    "chr22\t101\t.\tA\tG,C\t.\tPASS\t.\tGT\t1|2",
+    "chrM\t102\t.\tC\tT\t.\tPASS\t.\tGT\t0/0",
+    "22\t103\t.\tA\tG\t.\tPASS\t.\tGT\t./.",
+    "22\t104\t.\tA\t<NON_REF>\t.\tPASS\tEND=200\tGT\t0/0",
+    "22\t201\t.\tA\tAC\t.\tPASS\t.\tGT\t0/1",
+    "22\t202\t.\tAC\tG\t.\tPASS\t.\tGT\t1/1",
+    "22\t0\t.\tA\tG\t.\tPASS\t.\tGT\t0/1",
+    "GL000207.1\t203\t.\tA\tG\t.\tPASS\t.\tGT\t0/1",
+    "22\t204\t.\tA\tG\t.\tPASS\t.\tDP\t10",
+    "22\t205\tcustom-name\tA\tG\t.\tPASS\t.\tGT\t0/1",
+  ].join("\n");
+  expect(parserVCF.validate(content).valid).toBe(true);
+  expect(parserVCF.validate(content).reason).toContain("4 genotype records");
+  for (const result of [
+    await parserVCF.parse(content, () => undefined),
+    await parserVCF.parseBlob(new Blob([content]), () => undefined),
+    await parserVCF.parseBlob(new File([gzipSync(content)], "coordinates.vcf.gz"), () => undefined),
+  ]) {
+    expect(result.errors).toEqual([]);
+    expect(result.assembly).toBe("GRCh38");
+    expect(result.genotypes.map((genotype) => genotype.rsid)).toEqual([
+      "GRCh38:22:100:A:G",
+      "GRCh38:22:101:A:C,G",
+      "GRCh38:MT:102:C:T",
+      "GRCh38:22:103:A:G",
+    ]);
+    expect(result.genotypes[0]).toMatchObject({
+      genotype: "ag",
+      ref: "A",
+      alt: "G",
+      strand: "plus",
+      assembly: "GRCh38",
+    });
+    expect(result.genotypes[1]).toMatchObject({ genotype: "cg", alt: "C,G", phased: true });
+    expect(result.genotypes[2].genotype).toBe("cc");
+    expect(result.genotypes[2].alt).toBeUndefined();
+    expect(result.genotypes[3].genotype).toBe("--");
+    expect(result.skippedLines + result.genotypes.length).toBe(result.totalLines);
+  }
+});
+
+test("VCF coordinate identities require one supported build and accept explicit contig declarations", async () => {
+  const content = [
+    "##fileformat=VCFv4.2",
+    "##contig=<ID=22,assembly=GRCh37>",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+    "22\t100\t.\tA\tG\t.\tPASS\t.\tGT\t0/1",
+  ].join("\n");
+  for (const parse of [
+    (input: string) => parserVCF.parse(input, () => undefined),
+    (input: string) => parserVCF.parseBlob(new Blob([input]), () => undefined),
+  ]) {
+    expect((await parse(content)).genotypes[0].rsid).toBe("GRCh37:22:100:A:G");
+    for (const unresolved of [
+      content.replace("##contig=<ID=22,assembly=GRCh37>\n", ""),
+      content.replace("GRCh37", "GRCh36"),
+      content.replace("##contig", "##reference=GRCh38.fa\n##contig"),
+    ]) {
+      const result = await parse(unresolved);
+      expect(result.genotypes).toEqual([]);
+      expect(result.errors).toEqual([]);
+      expect(result.skippedLines).toBe(result.totalLines);
+    }
   }
 });

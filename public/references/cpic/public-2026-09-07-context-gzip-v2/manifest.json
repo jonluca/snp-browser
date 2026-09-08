@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-08T00:04:21Z",
+  "packs": [
+    {
+      "name": "CPIC",
+      "description": "Gene\u2013drug evidence levels and published guideline links where available, without inferring diplotypes or prescribing advice.",
+      "homepage": "https://www.clinpgx.org/",
+      "license": "Creative Commons CC0 1.0",
+      "licenseUrl": "https://github.com/cpicpgx/cpic-data/blob/main/LICENSE.md",
+      "attribution": "Clinical Pharmacogenetics Implementation Consortium (CPIC), Stanford University and St. Jude Children's Research Hospital. Converted gene\u2013drug reference data. Guidelines and content are subject to updates; consult the linked current guideline. No endorsement is implied.",
+      "id": "cpic",
+      "source": "cpic",
+      "version": "public-2026-09-07-context-gzip-v2",
+      "builtAt": "2026-09-08T00:04:21Z",
+      "coverage": "Complete paginated public CPIC pair_view gene-drug evidence metadata fetched 2026-09-07 (574 pairs). Some pairs do not have prescribing guidelines; real guideline links are retained when supplied. No diplotypes or prescribing rules are applied.",
+      "recordCount": 574,
+      "shards": [
+        {
+          "url": "/references/cpic/public-2026-09-07-context-gzip-v2/part-00001.sqlite.gzip",
+          "bytes": 72262,
+          "sha256": "80bd43dbfaff8073dff0718d9c59d249f7abddf4a95b1342cbb5e5364b9ff759",
+          "records": 574,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 2424,
+            "hashes": 7,
+            "bits": "MBgCgQ0AqkVCIDZACGMQAAfFCYNUGBSJAIhipYECmi8QaBNoEAsMBMACABTASkKAmSRB6aEwYKwAQrQCzXjoFAEkGeZA4AZrAUBDI5gGgwMSAgIFKWMwgMSMC0FMANzhySOXcCApfQc4JmAxiHRPgYCCHQwNBmoqVANJaxEeBIQMJQIehwKAYgIwiAEYhIoFfAQdUAEAADBSYIRAIkJQFG0EggogkggIQABBOxGgYEIAkKgQQVn0ABjQgIAAQgihRkoAoYRAh2ghhiQTQwAKYDwkJMABAFBwrMSalRALDOLpTx0gECQggLlWuKQAxDeIIAg0ZkGJMgRAAAiATSqDBAgBCHgAMSEwoiEEYiPAnBEJAQIRUgAQEiROIFAhuIgOBABVcMETQYhYgIIuzeCy"
+          },
+          "compression": {
+            "format": "gzip",
+            "uncompressedBytes": 692224,
+            "uncompressedSha256": "506c5225682d8e53f5da3314380506e89e5cffebe4bb704409d76ea2591cedd2"
+          }
+        }
+      ],
+      "sourceRelease": "Public pair_view snapshot 2026-09-07"
+    }
+  ]
+}

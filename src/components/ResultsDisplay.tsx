@@ -6,6 +6,11 @@ import { buildCsv, downloadCsvFile, type CsvColumn } from "../utils/csvExport";
 import { getVariantPresentation, plainWikiText } from "../utils/variantPresentation";
 import { WikiContent } from "./WikiContent";
 import { GenosetDisplay } from "./GenosetDisplay";
+import { AnnotationDetails } from "./AnnotationDetails";
+import { useQuery } from "@tanstack/react-query";
+import type { Remote } from "comlink";
+import type { SNPMatcherWorkerApi } from "../workers/snpMatcher.worker";
+import { ANNOTATION_SOURCE_NAMES } from "../utils/annotationPresentation";
 
 type ViewMode = "snps" | "genosets";
 type SortMode = "magnitude" | "rsid";
@@ -13,6 +18,8 @@ type SortMode = "magnitude" | "rsid";
 interface ResultsDisplayProps {
   matches: MatchedSNP[];
   genosets: MatchedGenoset[];
+  workerApi: Remote<SNPMatcherWorkerApi>;
+  referenceRevision: number;
 }
 
 const parsedValue = (value: unknown) => (value === null || value === undefined ? "" : String(value));
@@ -40,25 +47,39 @@ const SNP_EXPORT_COLUMNS: CsvColumn<MatchedSNP>[] = [
   { header: "Summary", value: (match) => parsedValue(match.parsedData.summary) },
   { header: "Orientation", value: (match) => parsedValue(match.parsedData.orientation) },
   { header: "Stabilized Orientation", value: (match) => parsedValue(match.parsedData.stabilizedOrientation) },
-  { header: "SNPedia URL", value: (match) => `https://www.snpedia.com/index.php/${match.rsid}` },
+  {
+    header: "SNPedia URL",
+    value: (match) =>
+      match.snpData.referenceSource ? "" : `https://www.snpedia.com/index.php/${encodeURIComponent(match.rsid)}`,
+  },
+  { header: "Genome Build", value: (match) => match.assembly },
+  {
+    header: "Reference Sources",
+    value: (match) => match.annotationSummary?.sources.map((source) => ANNOTATION_SOURCE_NAMES[source]).join("; "),
+  },
+  { header: "Reference Annotations", value: (match) => match.annotationSummary?.count },
+  { header: "Confirmed Allele Matches", value: (match) => match.annotationSummary?.alleleCount },
+  { header: "Unresolved Matches", value: (match) => match.annotationSummary?.unresolvedCount },
 ];
 
-export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
+const hasAlleleAnnotation = (match: MatchedSNP) => Boolean(match.genotypeData || match.annotationSummary?.alleleCount);
+
+export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision }: ResultsDisplayProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("snps");
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [onlyWithGenotype, setOnlyWithGenotype] = useState(true);
+  const [onlyWithGenotype, setOnlyWithGenotype] = useState(false);
   const [sortMode, setSortMode] = useState<SortMode>("magnitude");
   const searchRef = useRef<HTMLInputElement>(null);
   const detailRef = useRef<HTMLHeadingElement>(null);
   const detailPaneRef = useRef<HTMLDivElement>(null);
-  const annotatedCount = useMemo(() => matches.filter((match) => match.genotypeData).length, [matches]);
+  const annotatedCount = useMemo(() => matches.filter(hasAlleleAnnotation).length, [matches]);
 
   const filteredMatches = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
     return matches
       .filter((match) => {
-        if (onlyWithGenotype && !match.genotypeData) return false;
+        if (onlyWithGenotype && !hasAlleleAnnotation(match)) return false;
         return (
           !term ||
           [
@@ -68,6 +89,7 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
             match.parsedData.summary,
             match.snpData.content,
             match.genotypeData?.content,
+            match.annotationSummary?.sources.join(" "),
           ].some((value) => value?.toLowerCase().includes(term))
         );
       })
@@ -79,6 +101,20 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
 
   const selectedSNP = filteredMatches.find((match) => match.rsid === selectedId);
   const selectedPresentation = selectedSNP ? presentMatch(selectedSNP) : undefined;
+  const annotationDetails = useQuery({
+    queryKey: [
+      "matched-annotations",
+      selectedSNP?.rsid,
+      selectedSNP?.genotype,
+      selectedSNP?.assembly,
+      selectedSNP?.position,
+      referenceRevision,
+      selectedSNP?.annotationSummary?.ambiguous,
+    ],
+    enabled: Boolean(selectedSNP?.annotationSummary?.count),
+    queryFn: () => workerApi.getMatchedAnnotations(selectedSNP!, selectedSNP?.annotationSummary?.ambiguous),
+    retry: false,
+  });
 
   useEffect(() => {
     if (detailPaneRef.current) detailPaneRef.current.scrollTop = 0;
@@ -112,7 +148,9 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
       >
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className="font-mono text-sm font-semibold text-slate-900">{match.rsid}</span>
+            <span className="min-w-0 font-mono text-sm font-semibold text-slate-900 [overflow-wrap:anywhere]">
+              {match.rsid}
+            </span>
             {presentation.gene && (
               <span className="truncate text-xs font-medium text-slate-500">{presentation.gene}</span>
             )}
@@ -122,7 +160,7 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
           </span>
         </div>
         <p className="mt-2 line-clamp-2 text-sm leading-relaxed text-slate-600">
-          {presentation.preview || "Explore the available SNPedia research for this variant."}
+          {presentation.preview || "Explore the available reference evidence for this variant."}
         </p>
         <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] font-medium text-slate-500">
           {match.parsedData.magnitude !== undefined && (
@@ -130,7 +168,10 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
               Magnitude <span className="text-slate-800">{match.parsedData.magnitude}</span>
             </span>
           )}
-          <span>{match.genotypeData ? "Genotype annotation" : "General variant information"}</span>
+          <span>{hasAlleleAnnotation(match) ? "Allele or genotype annotation" : "General variant information"}</span>
+          {match.annotationSummary && (
+            <span>{match.annotationSummary.sources.map((source) => ANNOTATION_SOURCE_NAMES[source]).join(" · ")}</span>
+          )}
           <span className="ml-auto text-brand-700" aria-hidden="true">
             →
           </span>
@@ -179,8 +220,9 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
                 <p className="section-label mb-2">Your DNA, in context</p>
                 <h2 className="text-2xl font-semibold tracking-tight text-slate-950">Your variant matches</h2>
                 <p className="mt-2 text-sm leading-relaxed text-slate-500">
-                  <span className="font-medium text-slate-700">{matches.length.toLocaleString()}</span> variants in
-                  SNPedia · {annotatedCount.toLocaleString()} with an annotation for your genotype
+                  <span className="font-medium text-slate-700">{matches.length.toLocaleString()}</span>{" "}
+                  {matches.length === 1 ? "variant" : "variants"} in your enabled references ·{" "}
+                  {annotatedCount.toLocaleString()} with an allele or genotype annotation
                 </p>
               </div>
               <button
@@ -243,10 +285,10 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
                     }}
                     className="size-4 rounded border-slate-300 accent-brand-600"
                   />
-                  With annotations for my genotype
+                  With allele or genotype annotations
                 </label>
                 <span aria-live="polite" className="text-xs tabular-nums text-slate-500">
-                  {filteredMatches.length.toLocaleString()} results
+                  {filteredMatches.length.toLocaleString()} {filteredMatches.length === 1 ? "result" : "results"}
                 </span>
               </div>
             </div>
@@ -275,7 +317,7 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
                   <p className="mt-2 max-w-64 text-sm leading-relaxed text-slate-500">
                     {matches.length
                       ? "Try a different keyword or include variants without genotype annotations."
-                      : "The variants in this file are not in the current SNPedia database."}
+                      : "No variants in this file match the currently enabled reference datasets."}
                   </p>
                   {matches.length > 0 && (
                     <button type="button" onClick={clearFilters} className="secondary-button mt-5">
@@ -303,30 +345,37 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
                     ← Back to results
                   </button>
                   <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
+                    <div className="min-w-0 max-w-full">
                       <p className="section-label mb-2">Variant detail</p>
                       <h3
                         ref={detailRef}
                         tabIndex={-1}
-                        className="font-mono text-2xl font-semibold tracking-tight text-slate-950 outline-none"
+                        className="font-mono text-2xl font-semibold tracking-tight text-slate-950 outline-none [overflow-wrap:anywhere]"
                       >
                         {selectedSNP.rsid}
                       </h3>
                     </div>
-                    <a
-                      href={`https://www.snpedia.com/index.php/${selectedSNP.rsid}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="mt-1 text-xs font-medium text-brand-700 hover:underline"
-                    >
-                      Open SNPedia <span aria-hidden="true">↗</span>
-                    </a>
+                    {!selectedSNP.snpData.referenceSource && (
+                      <a
+                        href={`https://www.snpedia.com/index.php/${encodeURIComponent(selectedSNP.rsid)}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-1 text-xs font-medium text-brand-700 hover:underline"
+                      >
+                        Open SNPedia <span aria-hidden="true">↗</span>
+                      </a>
+                    )}
                   </div>
                   <p className="mt-5 text-lg leading-relaxed text-slate-800">
                     {selectedPresentation.preview ||
                       "No summary is available for this variant. Explore the research notes below."}
                   </p>
-                  <dl className="my-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200 sm:grid-cols-4">
+                  <dl
+                    className={twMerge(
+                      "my-6 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-slate-200 bg-slate-200",
+                      !selectedSNP.snpData.referenceSource && "sm:grid-cols-4",
+                    )}
+                  >
                     <div className="bg-brand-50 p-3.5">
                       <dt className="text-[11px] font-medium text-brand-700">Your genotype</dt>
                       <dd className="mt-1 font-mono text-lg font-semibold text-brand-700">
@@ -339,37 +388,46 @@ export function ResultsDisplay({ matches, genosets }: ResultsDisplayProps) {
                         {selectedPresentation.gene || "Not listed"}
                       </dd>
                     </div>
-                    <div
-                      className="bg-white p-3.5"
-                      title="SNPedia's editorial measure of interest; not a probability or risk score."
-                    >
-                      <dt className="text-[11px] font-medium text-slate-500">Magnitude</dt>
-                      <dd className="mt-1 text-sm font-semibold text-slate-800">
-                        {selectedSNP.parsedData.magnitude ?? "Not rated"}
-                      </dd>
-                    </div>
-                    <div className="bg-white p-3.5">
-                      <dt className="text-[11px] font-medium text-slate-500">SNPedia repute</dt>
-                      <dd className="mt-1 break-words text-sm font-semibold capitalize text-slate-800">
-                        {selectedPresentation.repute || "Not listed"}
-                      </dd>
-                    </div>
+                    {!selectedSNP.snpData.referenceSource && (
+                      <>
+                        <div
+                          className="bg-white p-3.5"
+                          title="SNPedia's editorial measure of interest; not a probability or risk score."
+                        >
+                          <dt className="text-[11px] font-medium text-slate-500">Magnitude</dt>
+                          <dd className="mt-1 text-sm font-semibold text-slate-800">
+                            {selectedSNP.parsedData.magnitude ?? "Not rated"}
+                          </dd>
+                        </div>
+                        <div className="bg-white p-3.5">
+                          <dt className="text-[11px] font-medium text-slate-500">SNPedia repute</dt>
+                          <dd className="mt-1 break-words text-sm font-semibold capitalize text-slate-800">
+                            {selectedPresentation.repute || "Not listed"}
+                          </dd>
+                        </div>
+                      </>
+                    )}
                   </dl>
                   <p className="mb-6 text-xs text-slate-500">
                     Chromosome {selectedSNP.chromosome} <span aria-hidden="true">·</span> Position{" "}
-                    {selectedSNP.position}
+                    {selectedSNP.position} · {selectedSNP.assembly || "Genome build not declared"}
                   </p>
                   {selectedSNP.genotypeData?.content ? (
                     <section className="border-t border-slate-200 pt-5">
                       <h4 className="mb-4 text-sm font-semibold text-slate-900">About your genotype</h4>
                       <WikiContent content={selectedSNP.genotypeData.content} hideSummary />
                     </section>
-                  ) : (
+                  ) : !selectedSNP.snpData.referenceSource ? (
                     <p className="rounded-xl bg-slate-50 p-4 text-sm leading-relaxed text-slate-600">
                       This variant is in SNPedia, but no annotation matches your genotype. The notes below describe the
                       variant in general.
                     </p>
-                  )}
+                  ) : null}
+                  <AnnotationDetails
+                    annotations={annotationDetails.data ?? []}
+                    loading={annotationDetails.isFetching}
+                    error={annotationDetails.error?.message}
+                  />
                   {selectedSNP.snpData.content && (
                     <details className="mt-6 border-t border-slate-200 pt-5" open={!selectedSNP.genotypeData}>
                       <summary className="cursor-pointer text-sm font-semibold text-slate-900">

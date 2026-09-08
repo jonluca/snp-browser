@@ -1,0 +1,49 @@
+{
+  "source": "gnomad",
+  "format": "vcf",
+  "assembly": "GRCh38",
+  "adapterVersion": 1,
+  "pythonVersion": "3.14.7",
+  "sqliteVersion": "3.53.4",
+  "groupedByVariant": false,
+  "filters": {
+    "minimumAF": 0.001,
+    "passOnly": true,
+    "canonicalOnly": false
+  },
+  "inputs": [
+    {
+      "name": "gnomad-chr22-common.vcf",
+      "bytes": 415580054,
+      "sha256": "0afc022a214eae6c6111321ab4d70a5fedcd879aa5020fbd1b08e2c7a938caa3"
+    }
+  ],
+  "urls": [
+    "https://gnomad-public-us-east-1.s3.amazonaws.com/release/4.1.1/vcf/exomes/gnomad.exomes.v4.1.1.sites.chr22.vcf.bgz"
+  ],
+  "sourceVersion": "gnomAD4.1.1 exomes; bundled VEP105",
+  "sourceMD5": "4543f706701bc746bf291884fd277934",
+  "sourceMD5Verified": true,
+  "selection": {
+    "preparedAt": "2026-09-07T22:33:22Z",
+    "input": "gnomad-exomes-4.1.1-chr22.vcf.bgz",
+    "inputSha256": "936d6e288f2af1450289ec9fa7cceefc5d5d16cef53b35d6058969154d22a7d0",
+    "sourceRows": 4845199,
+    "selectedRows": 38854,
+    "minimumAF": 0.001,
+    "passOnly": true,
+    "selection": "Public source rows with at least one ALT meeting AF threshold; apply the same per-allele threshold during pack build for multiallelic rows."
+  },
+  "fetchedAt": "2026-09-07",
+  "sourceRelease": "4.1.1 exomes",
+  "assetCompression": {
+    "format": "gzip",
+    "level": 9,
+    "preparedAt": "2026-09-08T00:04:21Z",
+    "sourcePackVersion": "4.1.1-pass-af001",
+    "sourceCatalogSha256": "44cc3766987f6670f85a711d2f02f6596fa081096994e4af831019735dc9b55b",
+    "pythonVersion": "3.14.7",
+    "zlibVersion": "1.2.12",
+    "verification": "Every input SQLite hash and every fully inflated output hash match the original manifest; encoded hashes recorded separately."
+  }
+}

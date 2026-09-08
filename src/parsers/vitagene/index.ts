@@ -1,3 +1,4 @@
+import { applyFileMetadata, detectFileMetadata } from "../metadata";
 import type { DNAParser, ProgressCallback, ParserMetadata, ValidationResult } from "../types";
 import type { ParseResult, UserGenotype } from "../../types/snp";
 
@@ -134,12 +135,15 @@ export class ParserVitagene implements DNAParser {
       }
     }
 
-    return {
-      genotypes,
-      totalLines,
-      skippedLines,
-      errors,
-    };
+    return applyFileMetadata(
+      {
+        genotypes,
+        totalLines,
+        skippedLines,
+        errors,
+      },
+      detectFileMetadata(content),
+    );
   }
 
   private isHeader(parts: string[]): boolean {

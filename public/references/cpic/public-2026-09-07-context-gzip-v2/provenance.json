@@ -1,0 +1,37 @@
+{
+  "source": "cpic",
+  "format": "json",
+  "assembly": null,
+  "adapterVersion": 1,
+  "pythonVersion": "3.14.7",
+  "sqliteVersion": "3.53.4",
+  "groupedByVariant": false,
+  "filters": {
+    "minimumAF": null,
+    "passOnly": false,
+    "canonicalOnly": false
+  },
+  "inputs": [
+    {
+      "name": "cpic-pairs.json",
+      "bytes": 186603,
+      "sha256": "abed1cbc611dec7725702193a816e8209eb61ca240cad6a717d506aac6daafff"
+    }
+  ],
+  "urls": [
+    "https://api.cpicpgx.org/v1/pair_view?order=pairid&limit=500&offset=0",
+    "https://api.cpicpgx.org/v1/pair_view?order=pairid&limit=500&offset=500"
+  ],
+  "fetchedAt": "2026-09-07",
+  "sourceRelease": "Public pair_view snapshot 2026-09-07",
+  "assetCompression": {
+    "format": "gzip",
+    "level": 9,
+    "preparedAt": "2026-09-08T00:04:21Z",
+    "sourcePackVersion": "public-2026-09-07-context",
+    "sourceCatalogSha256": "44cc3766987f6670f85a711d2f02f6596fa081096994e4af831019735dc9b55b",
+    "pythonVersion": "3.14.7",
+    "zlibVersion": "1.2.12",
+    "verification": "Every input SQLite hash and every fully inflated output hash match the original manifest; encoded hashes recorded separately."
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "fetchedAt": "2026-09-07T22:15:39Z",
+  "urls": [
+    "https://ftp.ebi.ac.uk/pub/databases/gwas/releases/latest/gwas-catalog-associations_ontology-annotated-full.zip"
+  ],
+  "coverage": "Sample: first 200 rows of curated association table; gwas-catalog-download-associations-alt-full.tsv. Variant context only; reported risk alleles are not assumed reference-forward. Assembly not inferred.",
+  "inputs": [
+    {
+      "name": "gwas-sample.tsv",
+      "bytes": 147632,
+      "sha256": "3529106fb78224c036664d7f5bc6f45a90b101e465088cb3200ca5f190257fab"
+    }
+  ],
+  "sourceRelease": "Curated association file 2026-09-04"
+}

@@ -1,0 +1,39 @@
+{
+  "fetchedAt": "2026-09-07T22:14:50Z",
+  "urls": [
+    "https://rest.ensembl.org/vep/human/id/rs429358?content-type=application/json",
+    "https://rest.ensembl.org/vep/human/id/rs7412?content-type=application/json",
+    "https://rest.ensembl.org/vep/human/id/rs4244285?content-type=application/json",
+    "https://rest.ensembl.org/vep/human/id/rs1799853?content-type=application/json",
+    "https://rest.ensembl.org/vep/human/id/rs4149056?content-type=application/json"
+  ],
+  "coverage": "Sample: five fixed public reference identifiers (rs429358, rs7412, rs4244285, rs1799853, rs4149056). Not a complete release.",
+  "inputs": [
+    {
+      "name": "ensembl-rs429358.json",
+      "bytes": 23381,
+      "sha256": "7e7a00fa3d623acf2a3060d770786688d1b829da4a3d2bccedd51e49c00d815f"
+    },
+    {
+      "name": "ensembl-rs7412.json",
+      "bytes": 18672,
+      "sha256": "7f0c8b043f4555890bb646add11b1dfb01a8c6fb2af967da13ada85cace11654"
+    },
+    {
+      "name": "ensembl-rs4244285.json",
+      "bytes": 28465,
+      "sha256": "a44fbd2e8738641b49dcba20591a7e9a88db8936a31bb033497f333fd0cea650"
+    },
+    {
+      "name": "ensembl-rs1799853.json",
+      "bytes": 42518,
+      "sha256": "5e2863e608b0d8d5b0e75f59e2d632125dadf811f29166166b938c4db4e42e5d"
+    },
+    {
+      "name": "ensembl-rs4149056.json",
+      "bytes": 30506,
+      "sha256": "a1a4d7d79e8908b5faaeba03d50cfeca2bd239a6129582ed726b4aaaec8dc312"
+    }
+  ],
+  "sourceRelease": "Public VEP API snapshot 2026-09-07"
+}

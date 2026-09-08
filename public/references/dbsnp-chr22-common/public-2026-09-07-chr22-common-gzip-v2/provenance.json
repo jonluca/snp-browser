@@ -1,0 +1,42 @@
+{
+  "source": "dbsnp",
+  "format": "json",
+  "assembly": null,
+  "sourceRelease": "chr22 RefSNP file dated 2025-01-15",
+  "adapterVersion": 1,
+  "pythonVersion": "3.14.7",
+  "sqliteVersion": "3.53.4",
+  "groupedByVariant": false,
+  "filters": {
+    "minimumAF": null,
+    "passOnly": false,
+    "canonicalOnly": false
+  },
+  "inputs": [
+    {
+      "name": "refsnp-chr22-common.jsonl",
+      "bytes": 1377458062,
+      "sha256": "2a4194d268329fda6c7b9194d67194d7c6fe081b7c4fd6a943ddb48c4aedf698"
+    }
+  ],
+  "urls": [
+    "https://ftp.ncbi.nlm.nih.gov/snp/latest_release/JSON/refsnp-chr22.json.bz2",
+    "https://gnomad-public-us-east-1.s3.amazonaws.com/release/4.1.1/vcf/exomes/gnomad.exomes.v4.1.1.sites.chr22.vcf.bgz"
+  ],
+  "upstreamDbsnpFileDate": "2025-01-15",
+  "rawDbsnpBytes": 6686858433,
+  "verifiedOfficialMd5": "b479c9e73b796641b2cd3e63837d6041",
+  "selectionReport": "selection.json",
+  "selectionSourceSha256": "114410fc4e5fb3a6763aae96e5d4599f9447b4838fc2a9cd020a1c80a3f10d69",
+  "publicVariantSelectionSha256": "0afc022a214eae6c6111321ab4d70a5fedcd879aa5020fbd1b08e2c7a938caa3",
+  "assetCompression": {
+    "format": "gzip",
+    "level": 9,
+    "preparedAt": "2026-09-08T00:04:21Z",
+    "sourcePackVersion": "public-2026-09-07-chr22-common",
+    "sourceCatalogSha256": "44cc3766987f6670f85a711d2f02f6596fa081096994e4af831019735dc9b55b",
+    "pythonVersion": "3.14.7",
+    "zlibVersion": "1.2.12",
+    "verification": "Every input SQLite hash and every fully inflated output hash match the original manifest; encoded hashes recorded separately."
+  }
+}

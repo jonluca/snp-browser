@@ -1,0 +1,209 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T22:37:12Z",
+  "packs": [
+    {
+      "name": "ClinVar",
+      "description": "Submitted clinical classifications, conditions, review status, and evaluation dates.",
+      "homepage": "https://www.ncbi.nlm.nih.gov/clinvar/",
+      "license": "NCBI molecular data use policy",
+      "licenseUrl": "https://www.ncbi.nlm.nih.gov/home/about/policies/",
+      "attribution": "ClinVar, National Center for Biotechnology Information, U.S. National Library of Medicine. Converted to an indexed local reference format; original assertions retained.",
+      "id": "clinvar",
+      "source": "clinvar",
+      "version": "public-2026-09-07",
+      "builtAt": "2026-09-07T22:14:39Z",
+      "coverage": "Sample: first 200 records of ClinVar VCF. GRCh38; not genome-wide coverage.",
+      "recordCount": 200,
+      "shards": [
+        {
+          "url": "/references/clinvar/public-2026-09-07/part-00001.sqlite",
+          "bytes": 323584,
+          "sha256": "74594d1b6fbe7bcfe7c891759924b7521ffdb7e9d5505b756282749481af8d33",
+          "records": 200,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 6784,
+            "hashes": 7,
+            "bits": "qAkLAgmGgAyRYwKjE4AC6IUK0GGCHcAAAxEsgV4URAwWAjACKCJiAM0rIAcI4ACYTKQQOukEFJjYIAQMUSaQDaAgaCTkEYSQAFggJlAUVYUJaBKZCw4DEk4gxNGcAWBZggOFgRfQCHJwACstJgIgIiEwBDXKEq+ZEICNA8AXpMDjEBQSg3DZYAC4ASSOAZkBiQGCyiKEEAQBk2QMBEy4RAAHQCKoBEWAAAsSMBwINQGQiQEAgyAEQYAylBTEQkIAELBCmMFSJCURsYNIQWRgEUniQUnAggGaSIiaQ1WJCY6AhCFSCQBG5EEZsECICShACQCiLCBhgIDIAIQBZiyMADEAWAZHAAKQCIQyEgKASDeQSxgkyAiooIIECBIIAgKRCWQBkkKEAEwE7gdKE3QAIBwp0QoIA0BTgQGFUQEIYRgCcDBaEnjhoE4dHESGCAjbNahAgCQxBCMdCWgEwgygIBwugAEYGCVahUABC2EQsYUAZEAYlUITECiBFzoKNGOAAAYi0gAM8gAYSgYSiSBASkIWEAwACEwKIIijsQLKG6hAgIQJCigUwiIcKoAhJAUkiKVgwQgIFDEAAylJlAAI7KgLSYJEIASQYGik9KQxNBEAAIAZ4UIKo80TiMPebDgzVQGMARB5DNzEzRBBQDgtABuIlAIIQAAdkJOQ0KDBtEG5pCDFkJuAArhkBxhBDEGAJ0hFEAEVmcgAmUMARKACEEgAyl0AQAhFASBRFAIwZWKpAhAiFBhiYFgABBMKhZAEAAUAEigSNQo2XgiKBcUVYcQCMFwAQAhgEPQIQPA65AcAQYI6cBMEARIEQxSxmIshBwEAEuEiSOKwAUBFCCAEjwwSgSxQKQBES1IpQwUKAdIBgYFgTASsCARIOIMAGAQMNxhGpASOQaAAAAAQYYgYBCxCKKlgADpABBRigMGuQdyEGuISCkokRUoxQAIiApmQJRiAQEsTAgCFEIATAkClwMgAEgQcAAQyCDFFYhkAgdACABGARC4yABgiVuGoN7ABwkEvSUCiUdQRBgGLHFEIQIo+AgA4kmAEhBAZSCLoAvB7sUAIEHwFYMIQDJSQsEAApJ0IE5wfwgEAFAQJBGEIQ8CBUAJp4AHkCBghDGEGAgA="
+          }
+        }
+      ],
+      "sourceRelease": "VCF 2026-09-05"
+    },
+    {
+      "name": "dbSNP",
+      "description": "Reference variant identifiers, assembly-specific alleles, and merged identifiers.",
+      "homepage": "https://www.ncbi.nlm.nih.gov/snp/",
+      "license": "NCBI molecular data use policy",
+      "licenseUrl": "https://www.ncbi.nlm.nih.gov/home/about/policies/",
+      "attribution": "dbSNP, National Center for Biotechnology Information, U.S. National Library of Medicine. Converted to an indexed local reference format.",
+      "id": "dbsnp",
+      "source": "dbsnp",
+      "version": "public-2026-09-07",
+      "builtAt": "2026-09-07T22:14:41Z",
+      "coverage": "Sample: five fixed public reference identifiers (rs429358, rs7412, rs4244285, rs1799853, rs4149056). Not a complete release.",
+      "recordCount": 18,
+      "shards": [
+        {
+          "url": "/references/dbsnp/public-2026-09-07/part-00001.sqlite",
+          "bytes": 49152,
+          "sha256": "cb9859ecf0478c6de601365c5786c75f7edcb4633abc4deb85a563a70d932ca6",
+          "records": 18,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 1024,
+            "hashes": 7,
+            "bits": "AAA6AIDlCSAQAAQUwAQAAIMAGJQKIgYAAQAjAQaAAQAIAAEAIYgRiQhgAUGAgACIECASAAAAAEAA6AAEgqBJKIQAAAAhASByUACACCASFAACAAAAABBgBBrAAQIABgQggKIQgSAMYFAEDhNAIAECcAAiEAQGAIVAwABJRBAGaWY="
+          }
+        }
+      ],
+      "sourceRelease": "RefSNP API snapshot 2026-09-07"
+    },
+    {
+      "name": "gnomAD",
+      "description": "Allele counts, frequencies, ancestry-group frequencies, and source quality filters.",
+      "homepage": "https://gnomad.broadinstitute.org/",
+      "license": "Creative Commons CC0 1.0 (primary frequency data)",
+      "licenseUrl": "https://gnomad.broadinstitute.org/terms",
+      "attribution": "Genome Aggregation Database (gnomAD), Broad Institute and contributing studies. Converted to an indexed local reference format. Population frequency is not an individual's ancestry or disease probability.",
+      "id": "gnomad",
+      "source": "gnomad",
+      "version": "public-2026-09-07",
+      "builtAt": "2026-09-07T22:14:42Z",
+      "coverage": "Sample: first 100 records of gnomAD 4.1.1 exomes chromosome 22 VCF. GRCh38; not genome-wide coverage.",
+      "recordCount": 100,
+      "shards": [
+        {
+          "url": "/references/gnomad/public-2026-09-07/part-00001.sqlite",
+          "bytes": 618496,
+          "sha256": "607d0423205125ec94bff7d52e5d24209cecf969a7c75d1e037ce42bd8e81965",
+          "records": 100,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 1744,
+            "hashes": 7,
+            "bits": "ICqAgkgEUXEXUBCQALqJAEGJUkTWgSBBcA6CUwACCQGFIC/hAiAAI+SBIAwEAQCCgIJ2HYSGYHg3xkCMAGYQMQBA4gZEAVBIhgEiKQUCMMBckoSoANCyQQYlWkUH1hAQQM3qgEgkOBIiAgYBSgQIGGAQDkisRIEZJ0QABA6sAcEFgAxLCACGw1C4gGjV7jIgCDYIIjIDOCS4BADAUMhCGExVKjSRIAAxAjTkIBwUJQEOhgi6LIAgsCAA0BTA1wIQYCSHMBTGigGLACkAQgAAhmQKLGoCCTMACEE="
+          }
+        }
+      ],
+      "sourceRelease": "4.1.1 exomes"
+    },
+    {
+      "name": "GWAS Catalog",
+      "description": "Published variant\u2013trait associations, reported effect sizes, study populations, and publications.",
+      "homepage": "https://www.ebi.ac.uk/gwas/",
+      "license": "EMBL-EBI Terms of Use (curated association data)",
+      "licenseUrl": "https://www.ebi.ac.uk/about/terms-of-use/",
+      "attribution": "NHGRI-EBI GWAS Catalog. Converted curated associations; study findings are retained as variant context without inferring individual risk.",
+      "id": "gwas",
+      "source": "gwas",
+      "version": "public-2026-09-07",
+      "builtAt": "2026-09-07T22:15:39Z",
+      "coverage": "Sample: first 200 rows of curated association table; gwas-catalog-download-associations-alt-full.tsv. Variant context only; reported risk alleles are not assumed reference-forward. Assembly not inferred.",
+      "recordCount": 199,
+      "shards": [
+        {
+          "url": "/references/gwas/public-2026-09-07/part-00001.sqlite",
+          "bytes": 864256,
+          "sha256": "65e323a66a4404dcf01ddcb7ea0f4d2f99b11b1690368ea63c07d2b7233d0c1a",
+          "records": 199,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 4384,
+            "hashes": 7,
+            "bits": "nFGwIfRGFAMGAgGOKxIMgGkCEBk6ChAlViJHAhE0AcCGgxw5QAAMBQjQwMUccGAZohCoBYAAAAWhAiTooIZEBE2QgDZAFQBBIEB4jAAawCBAx4DM4whAADABMhBSUUxA7oDiNxAAWJIilAgRlDgBCxAEWVQUiiAYanoALdBWjEggAAQQOjLjgSuoRdEIAMSFwgliBERyEoOkAEYSCxRATgQpkkIACoFTlChwwCLEJYOkYQRRsQGlgC4mAEikkoBCCiUiMAmKUEjzAAApwAwKMCR4PJh0Q0FFyCBiCQJQAAEBMAhoBFAenCYJAojAoEACGYyBg0gA+gaBCAJDAFERkChRDVBIjJi60IEgRQ2CuBBKE9AyxIABhDUgDACtLn8EpMeGBIoIQYAKguAwACCjmAaJRQEHQIBSEPIAQIGoCGQLxIIYnAYgAQQQAIonoAgJ1BxCQBgghIgEmpCQYvwPkKgoSBFAhXMSEgMcQiiTdrbAjIA0YuZ+IZJgEGBgFDImzCMAFJAIkAwCIycTkR8swITMkDAXhRBLogjAGQBCUI0UE0YwBAAkgCEUzP2vF4WBUSYAcTK0WAEMiCwkpGBIIEKlxWsFkEoBABAAiAmAR3RCDIDIQBcBBNQsAZAAQqI/KAhAQAMaGWBWCABTGowMYMAo7JSxGUEAimcB1QEQQSsoMBgDCnizAgYAwQAoAAQDKgZqJA6lDIoEmuANowJkArADCDE="
+          }
+        }
+      ],
+      "sourceRelease": "Curated association file 2026-09-04"
+    },
+    {
+      "name": "Ensembl VEP",
+      "description": "Gene and transcript consequences, protein changes, and source prediction annotations.",
+      "homepage": "https://www.ensembl.org/info/docs/tools/vep/index.html",
+      "license": "Ensembl data use policy; retain third-party constraints",
+      "licenseUrl": "https://www.ensembl.org/info/about/legal/disclaimer.html",
+      "attribution": "Ensembl Variant Effect Predictor, EMBL-EBI. Precomputed public reference variants; no user variants are sent to Ensembl.",
+      "id": "ensembl",
+      "source": "ensembl",
+      "version": "public-2026-09-07",
+      "builtAt": "2026-09-07T22:14:50Z",
+      "coverage": "Sample: five fixed public reference identifiers (rs429358, rs7412, rs4244285, rs1799853, rs4149056). Not a complete release.",
+      "recordCount": 323,
+      "shards": [
+        {
+          "url": "/references/ensembl/public-2026-09-07/part-00001.sqlite",
+          "bytes": 458752,
+          "sha256": "20597a40c96d01237d6c0d1fe236e279a29d4b64b715e177e45096b5f9314ed7",
+          "records": 323,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 1024,
+            "hashes": 7,
+            "bits": "AAAaYACFACAAACYAggABAAcAGIAAAgIAEAgBIQCIAAAAAAABAYAQgACAAEECCAAAECBCAQAEAECAIAAAgCAIAIAABCAgQQAyIACAAAAAAAAAAACAEABgQgjAAAgABgAAADAAiCEEAGAACBBAIAFEEAECAAAEAABCAAAIQJAeSXY="
+          }
+        }
+      ],
+      "sourceRelease": "Public VEP API snapshot 2026-09-07"
+    },
+    {
+      "name": "ClinPGx / PharmGKB",
+      "description": "Curated pharmacogenomic evidence, evidence levels, and drug-response annotations.",
+      "homepage": "https://www.clinpgx.org/",
+      "license": "Creative Commons Attribution-ShareAlike 4.0",
+      "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+      "attribution": "ClinPGx / PharmGKB, Stanford University and contributing curators. Data converted to an indexed reference format; this derived data pack is distributed under CC BY-SA 4.0. No endorsement is implied.",
+      "id": "clinpgx",
+      "source": "clinpgx",
+      "version": "public-2026-09-07",
+      "builtAt": "2026-09-07T22:14:50Z",
+      "coverage": "Complete clinical annotation metadata table from CREATED_2025-07-05.txt. Genotype-specific allele text and full evidence tables are not imported. No individual drug response inferred.",
+      "recordCount": 5186,
+      "shards": [
+        {
+          "url": "/references/clinpgx/public-2026-09-07/part-00001.sqlite",
+          "bytes": 6787072,
+          "sha256": "b65d0e378dbb3ee8526511f3bd6a900c3b6562d68b5a746f4233cabf44e82d39",
+          "records": 5186,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 79824,
+            "hashes": 7,
+            "bits": "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"
+          }
+        }
+      ],
+      "sourceRelease": "Clinical annotation metadata archive 2025-07-05"
+    },
+    {
+      "name": "CPIC",
+      "description": "Gene\u2013drug evidence levels and published guideline links where available, without inferring diplotypes or prescribing advice.",
+      "homepage": "https://www.clinpgx.org/",
+      "license": "Creative Commons CC0 1.0",
+      "licenseUrl": "https://github.com/cpicpgx/cpic-data/blob/main/LICENSE.md",
+      "attribution": "Clinical Pharmacogenetics Implementation Consortium (CPIC), Stanford University and St. Jude Children's Research Hospital. Converted gene\u2013drug reference data. Guidelines and content are subject to updates; consult the linked current guideline. No endorsement is implied.",
+      "id": "cpic",
+      "source": "cpic",
+      "version": "public-2026-09-07-context",
+      "builtAt": "2026-09-07T22:36:45Z",
+      "coverage": "Complete paginated public CPIC pair_view gene-drug evidence metadata fetched 2026-09-07 (574 pairs). Some pairs do not have prescribing guidelines; real guideline links are retained when supplied. No diplotypes or prescribing rules are applied.",
+      "recordCount": 574,
+      "shards": [
+        {
+          "url": "/references/cpic/public-2026-09-07-context/part-00001.sqlite",
+          "bytes": 692224,
+          "sha256": "506c5225682d8e53f5da3314380506e89e5cffebe4bb704409d76ea2591cedd2",
+          "records": 574,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 2424,
+            "hashes": 7,
+            "bits": "MBgCgQ0AqkVCIDZACGMQAAfFCYNUGBSJAIhipYECmi8QaBNoEAsMBMACABTASkKAmSRB6aEwYKwAQrQCzXjoFAEkGeZA4AZrAUBDI5gGgwMSAgIFKWMwgMSMC0FMANzhySOXcCApfQc4JmAxiHRPgYCCHQwNBmoqVANJaxEeBIQMJQIehwKAYgIwiAEYhIoFfAQdUAEAADBSYIRAIkJQFG0EggogkggIQABBOxGgYEIAkKgQQVn0ABjQgIAAQgihRkoAoYRAh2ghhiQTQwAKYDwkJMABAFBwrMSalRALDOLpTx0gECQggLlWuKQAxDeIIAg0ZkGJMgRAAAiATSqDBAgBCHgAMSEwoiEEYiPAnBEJAQIRUgAQEiROIFAhuIgOBABVcMETQYhYgIIuzeCy"
+          }
+        }
+      ],
+      "sourceRelease": "Public pair_view snapshot 2026-09-07"
+    }
+  ]
+}

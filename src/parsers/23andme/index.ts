@@ -1,3 +1,4 @@
+import { applyFileMetadata, detectFileMetadata } from "../metadata";
 import type { DNAParser, ValidationResult, ProgressCallback, ParserMetadata } from "../types";
 import type { ParseResult, UserGenotype } from "../../types/snp";
 
@@ -144,12 +145,15 @@ export class Parser23andMe implements DNAParser {
       }
     }
 
-    return {
-      genotypes,
-      totalLines,
-      skippedLines,
-      errors,
-    };
+    return applyFileMetadata(
+      {
+        genotypes,
+        totalLines,
+        skippedLines,
+        errors,
+      },
+      detectFileMetadata(content),
+    );
   }
 }
 

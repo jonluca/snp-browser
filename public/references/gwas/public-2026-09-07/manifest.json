@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T22:15:39Z",
+  "packs": [
+    {
+      "name": "GWAS Catalog",
+      "description": "Published variant\u2013trait associations, reported effect sizes, study populations, and publications.",
+      "homepage": "https://www.ebi.ac.uk/gwas/",
+      "license": "EMBL-EBI Terms of Use (curated association data)",
+      "licenseUrl": "https://www.ebi.ac.uk/about/terms-of-use/",
+      "attribution": "NHGRI-EBI GWAS Catalog. Converted curated associations; study findings are retained as variant context without inferring individual risk.",
+      "id": "gwas",
+      "source": "gwas",
+      "version": "public-2026-09-07",
+      "builtAt": "2026-09-07T22:15:39Z",
+      "coverage": "Sample: first 200 rows of curated association table; gwas-catalog-download-associations-alt-full.tsv. Variant context only; reported risk alleles are not assumed reference-forward. Assembly not inferred.",
+      "recordCount": 199,
+      "shards": [
+        {
+          "url": "/references/gwas/public-2026-09-07/part-00001.sqlite",
+          "bytes": 864256,
+          "sha256": "65e323a66a4404dcf01ddcb7ea0f4d2f99b11b1690368ea63c07d2b7233d0c1a",
+          "records": 199,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 4384,
+            "hashes": 7,
+            "bits": "nFGwIfRGFAMGAgGOKxIMgGkCEBk6ChAlViJHAhE0AcCGgxw5QAAMBQjQwMUccGAZohCoBYAAAAWhAiTooIZEBE2QgDZAFQBBIEB4jAAawCBAx4DM4whAADABMhBSUUxA7oDiNxAAWJIilAgRlDgBCxAEWVQUiiAYanoALdBWjEggAAQQOjLjgSuoRdEIAMSFwgliBERyEoOkAEYSCxRATgQpkkIACoFTlChwwCLEJYOkYQRRsQGlgC4mAEikkoBCCiUiMAmKUEjzAAApwAwKMCR4PJh0Q0FFyCBiCQJQAAEBMAhoBFAenCYJAojAoEACGYyBg0gA+gaBCAJDAFERkChRDVBIjJi60IEgRQ2CuBBKE9AyxIABhDUgDACtLn8EpMeGBIoIQYAKguAwACCjmAaJRQEHQIBSEPIAQIGoCGQLxIIYnAYgAQQQAIonoAgJ1BxCQBgghIgEmpCQYvwPkKgoSBFAhXMSEgMcQiiTdrbAjIA0YuZ+IZJgEGBgFDImzCMAFJAIkAwCIycTkR8swITMkDAXhRBLogjAGQBCUI0UE0YwBAAkgCEUzP2vF4WBUSYAcTK0WAEMiCwkpGBIIEKlxWsFkEoBABAAiAmAR3RCDIDIQBcBBNQsAZAAQqI/KAhAQAMaGWBWCABTGowMYMAo7JSxGUEAimcB1QEQQSsoMBgDCnizAgYAwQAoAAQDKgZqJA6lDIoEmuANowJkArADCDE="
+          }
+        }
+      ],
+      "sourceRelease": "Curated association file 2026-09-04"
+    }
+  ]
+}

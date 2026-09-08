@@ -1,0 +1,39 @@
+{
+  "fetchedAt": "2026-09-07T22:14:41Z",
+  "urls": [
+    "https://api.ncbi.nlm.nih.gov/variation/v0/refsnp/429358",
+    "https://api.ncbi.nlm.nih.gov/variation/v0/refsnp/7412",
+    "https://api.ncbi.nlm.nih.gov/variation/v0/refsnp/4244285",
+    "https://api.ncbi.nlm.nih.gov/variation/v0/refsnp/1799853",
+    "https://api.ncbi.nlm.nih.gov/variation/v0/refsnp/4149056"
+  ],
+  "coverage": "Sample: five fixed public reference identifiers (rs429358, rs7412, rs4244285, rs1799853, rs4149056). Not a complete release.",
+  "inputs": [
+    {
+      "name": "dbsnp-rs429358.json",
+      "bytes": 117598,
+      "sha256": "8cc8f8a079322e9a6a7e6f88206d1f150420d2a92ed5a52cf700326619f8fea6"
+    },
+    {
+      "name": "dbsnp-rs7412.json",
+      "bytes": 99579,
+      "sha256": "41f32a3dc1413a771b5843cec6169ebfba6673cd8484147cb9432865d39cb9e5"
+    },
+    {
+      "name": "dbsnp-rs4244285.json",
+      "bytes": 365346,
+      "sha256": "fa1c5d673a2301aad0a9a4bd7739f8bc5eb3727fb0acc30acdece89a555cadd7"
+    },
+    {
+      "name": "dbsnp-rs1799853.json",
+      "bytes": 74901,
+      "sha256": "0b12c518ed5fd87d5e77a77bd0f3e05984acd3c0a431de1d2bbb3ad9157ddcc1"
+    },
+    {
+      "name": "dbsnp-rs4149056.json",
+      "bytes": 118346,
+      "sha256": "1723b625abd6e62307298fba395ff54aef97907539d3deda1a32423762f02021"
+    }
+  ],
+  "sourceRelease": "RefSNP API snapshot 2026-09-07"
+}

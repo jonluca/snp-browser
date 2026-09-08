@@ -1,5 +1,7 @@
+import { applyFileMetadata, detectFileMetadata, type FileMetadata } from "../metadata";
 import type { DNAParser, ValidationResult, ProgressCallback, ParserMetadata } from "../types";
 import type { ParseResult, UserGenotype } from "../../types/snp";
+import { normalizeChromosome, normalizePosition } from "../../utils/variantIdentity";
 
 const METADATA: ParserMetadata = {
   id: "vcf",
@@ -26,7 +28,7 @@ const GZIP_DEFLATE_METHOD = 0x08;
 const GZIP_FLAG_FEXTRA = 0x04;
 
 type VcfGenotypeParseResult =
-  | { status: "called"; genotype: string }
+  | { status: "called"; genotype: string; alt?: string; phased?: boolean }
   | { status: "invalid" }
   | { status: "unsupported" };
 
@@ -39,14 +41,16 @@ interface VcfParseState {
   skippedLines: number;
   totalLines: number;
   headerFound: boolean;
+  metadataLines: string[];
+  fileMetadata: FileMetadata;
 }
 
 /**
  * Parser for VCF genotype files.
  *
  * VCF records contain allele indexes in the sample GT field. This parser maps
- * those indexes back to REF/ALT bases and emits rsid-based genotypes that match
- * the normalized shape used by the other raw DNA parsers.
+ * those indexes back to REF/ALT bases. Records without an ID are retained only
+ * when an explicit supported assembly gives their coordinates a stable identity.
  */
 export class ParserVCF implements DNAParser {
   readonly metadata = METADATA;
@@ -57,8 +61,8 @@ export class ParserVCF implements DNAParser {
     let hasFileFormat = false;
     let hasColumnHeader = false;
     let hasSampleColumns = false;
-    let hasRsidData = false;
     let validDataLines = 0;
+    const assembly = detectFileMetadata(content, true).assembly;
 
     for (const line of lines) {
       const trimmed = line.trim();
@@ -85,9 +89,7 @@ export class ParserVCF implements DNAParser {
       if (trimmed.startsWith("#")) continue;
 
       const parts = this.splitColumns(trimmed);
-      if (parts.length >= 10 && this.extractRsid(parts[2])) {
-        hasRsidData = true;
-
+      if (parts.length >= 10 && this.variantId(parts[2], parts[0], parts[1], parts[3], parts[4], assembly)) {
         const genotype = this.parseSampleGenotype(parts[3], parts[4], parts[8], parts[9]);
         if (genotype.status === "called") {
           validDataLines++;
@@ -99,7 +101,7 @@ export class ParserVCF implements DNAParser {
     if (hasFileFormat) confidence += 0.4;
     if (hasColumnHeader) confidence += 0.3;
     if (hasSampleColumns) confidence += 0.2;
-    if (hasRsidData && validDataLines > 0) confidence += 0.1;
+    if (validDataLines > 0) confidence += 0.1;
 
     const valid = (hasFileFormat && hasColumnHeader) || (hasColumnHeader && validDataLines > 0);
 
@@ -130,12 +132,7 @@ export class ParserVCF implements DNAParser {
       }
     }
 
-    return {
-      genotypes: state.genotypes,
-      totalLines,
-      skippedLines: state.skippedLines,
-      errors: state.errors,
-    };
+    return this.finishParse(state);
   }
 
   async parseBlob(file: Blob & { name?: string }, onProgress: ProgressCallback): Promise<ParseResult> {
@@ -174,12 +171,7 @@ export class ParserVCF implements DNAParser {
 
     onProgress(totalBytes, totalBytes);
 
-    return {
-      genotypes: state.genotypes,
-      totalLines: state.totalLines,
-      skippedLines: state.skippedLines,
-      errors: state.errors,
-    };
+    return this.finishParse(state);
   }
 
   private createParseState(totalLines: number): VcfParseState {
@@ -189,7 +181,21 @@ export class ParserVCF implements DNAParser {
       skippedLines: 0,
       totalLines,
       headerFound: false,
+      metadataLines: [],
+      fileMetadata: {},
     };
+  }
+
+  private finishParse(state: VcfParseState): ParseResult {
+    return applyFileMetadata(
+      {
+        genotypes: state.genotypes,
+        totalLines: state.totalLines,
+        skippedLines: state.skippedLines,
+        errors: state.errors,
+      },
+      state.fileMetadata,
+    );
   }
 
   private async openTextStream(file: Blob & { name?: string }): Promise<ReadableStream<Uint8Array>> {
@@ -398,12 +404,19 @@ export class ParserVCF implements DNAParser {
     }
 
     if (line.startsWith("##")) {
+      if (
+        !state.headerFound &&
+        (/^##reference=/i.test(line) || (/^##contig=/i.test(line) && /[,<]assembly=/i.test(line)))
+      ) {
+        state.metadataLines.push(line);
+      }
       state.skippedLines++;
       return;
     }
 
     if (line.startsWith("#CHROM")) {
       const parts = this.splitColumns(line);
+      state.fileMetadata = detectFileMetadata(state.metadataLines.join("\n"), true);
       state.headerFound = true;
       state.skippedLines++;
 
@@ -432,7 +445,7 @@ export class ParserVCF implements DNAParser {
     }
 
     const [chromosome, position, id, ref, alt] = parts;
-    const rsid = this.extractRsid(id);
+    const rsid = this.variantId(id, chromosome, position, ref, alt, state.fileMetadata.assembly);
 
     if (!rsid) {
       state.skippedLines++;
@@ -462,6 +475,10 @@ export class ParserVCF implements DNAParser {
       chromosome: this.normalizeChromosome(chromosome ?? ""),
       position: position ?? "",
       genotype: genotype.genotype,
+      ref: ref.toUpperCase(),
+      ...(genotype.alt ? { alt: genotype.alt } : {}),
+      strand: "plus",
+      ...(genotype.phased !== undefined ? { phased: genotype.phased } : {}),
     });
   }
 
@@ -475,12 +492,42 @@ export class ParserVCF implements DNAParser {
     return match ? match[0].toLowerCase() : null;
   }
 
+  private variantId(
+    id: string,
+    chromosome: string,
+    position: string,
+    ref: string,
+    alt: string,
+    assembly?: FileMetadata["assembly"],
+  ): string | null {
+    const rsid = this.extractRsid(id);
+    if (rsid) return rsid;
+    if (id !== "." || !assembly || !/^[ACGT]$/i.test(ref)) return null;
+    const normalizedChromosome = normalizeChromosome(chromosome);
+    const normalizedPosition = normalizePosition(position);
+    // A gVCF reference block has no concrete SNP alternate. Keep the declared
+    // SNP alternates in the display key; called ALT metadata remains separate.
+    const alternates = [
+      ...new Set(
+        alt
+          .toUpperCase()
+          .split(",")
+          .filter((allele) => /^[ACGT]$/.test(allele)),
+      ),
+    ].sort();
+    if (!normalizedChromosome || !normalizedPosition || !alternates.length) return null;
+    return `${assembly}:${normalizedChromosome}:${normalizedPosition}:${ref.toUpperCase()}:${alternates.join(",")}`;
+  }
+
   private normalizeChromosome(chromosome: string): string {
     const normalized = chromosome.replace(/^chr/i, "");
     return normalized.toUpperCase() === "M" ? "MT" : normalized;
   }
 
   private parseSampleGenotype(ref: string, alt: string, format: string, sample: string): VcfGenotypeParseResult {
+    // This browser currently supports SNP calls only. An alternate base paired
+    // with a multi-base REF is still an indel and cannot use SNP identity rules.
+    if (!/^[ACGT]$/i.test(ref)) return { status: "unsupported" };
     const formatFields = format.split(":");
     const sampleFields = sample.split(":");
     const genotypeIndex = formatFields.indexOf("GT");
@@ -510,7 +557,17 @@ export class ParserVCF implements DNAParser {
       genotypeBases.push(allele);
     }
 
-    return { status: "called", genotype: this.normalizeGenotypeOrder(genotypeBases) };
+    const calledAlternates = [
+      ...new Set(
+        alleleIndexes.filter((index) => Number(index) > 0).map((index) => alleles[Number(index)].toUpperCase()),
+      ),
+    ];
+    return {
+      status: "called",
+      genotype: this.normalizeGenotypeOrder(genotypeBases),
+      ...(calledAlternates.length ? { alt: calledAlternates.sort().join(",") } : {}),
+      ...(alleleIndexes.length > 1 ? { phased: genotypeField.includes("|") && !genotypeField.includes("/") } : {}),
+    };
   }
 
   private normalizeGenotypeOrder(alleles: string[]): string {

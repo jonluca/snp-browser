@@ -4,10 +4,12 @@ import { useSNPMatcherWorker, proxy } from "./hooks/useSNPMatcherWorker";
 import { FileUpload } from "./components/FileUpload";
 import { ResultsDisplay } from "./components/ResultsDisplay";
 import { SNPBrowser } from "./components/SNPBrowser";
+import { ReferenceLibrary } from "./components/ReferenceLibrary";
+import { useReferenceLibrary } from "./hooks/useReferenceLibrary";
 import type { ParseResult, MatchedSNP, MatchedGenoset } from "./types/snp";
 import { DB_URL } from "./constants.ts";
 
-type AppMode = "upload" | "browse";
+type AppMode = "upload" | "browse" | "references";
 
 function isVcfLikeFile(file: File): boolean {
   const lowerFilename = file.name.toLowerCase();
@@ -49,6 +51,7 @@ function App() {
   const [isMatching, setIsMatching] = useState(false);
   const [isMatchingGenosets, setIsMatchingGenosets] = useState(false);
   const [matchError, setMatchError] = useState<Error | null>(null);
+  const [analyzedReferenceRevision, setAnalyzedReferenceRevision] = useState(0);
 
   // Refs for direct DOM manipulation of progress bar (shared across all operations)
   const progressBarRef = useRef<HTMLDivElement>(null);
@@ -60,6 +63,7 @@ function App() {
   // Use separate workers so uploads can be parsed while the database worker is loading SQLite.
   const { api: workerApi, isReady: isWorkerReady, error: workerError } = useSNPMatcherWorker();
   const { api: parserWorkerApi, isReady: isParserWorkerReady, error: parserWorkerError } = useSNPMatcherWorker();
+  const references = useReferenceLibrary(workerApi, mode === "references");
 
   // Load database when worker is ready
   useEffect(() => {
@@ -168,11 +172,16 @@ function App() {
         setIsParsing(false);
 
         if (result.genotypes.length === 0) {
-          throw new Error(
-            result.detectedFormat === "vcf"
-              ? "No rsID SNP genotype records were found in this VCF/gVCF. Reference blocks and indels are skipped because SNP Browser can only match SNP records with rsIDs against SNPedia."
-              : "No valid SNP data found in file",
+          setMatchError(
+            new Error(
+              result.detectedFormat === "vcf"
+                ? "No supported SNP genotype records were found in this VCF/gVCF. Records need an rsID, or an explicit GRCh37/GRCh38 reference build and valid SNP coordinates. Reference blocks and indels are skipped."
+                : "No valid SNP data found in file",
+            ),
           );
+          progressPhaseRef.current = null;
+          processingRef.current = false;
+          return;
         }
 
         // Match SNPs using worker
@@ -222,6 +231,7 @@ function App() {
         progressPhaseRef.current = null;
         setGenosets(matchedGenosets);
         setIsMatchingGenosets(false);
+        setAnalyzedReferenceRevision(references.revision);
       } catch (err) {
         progressPhaseRef.current = null;
         console.error("Error processing file:", err);
@@ -232,8 +242,41 @@ function App() {
       }
       processingRef.current = false;
     },
-    [parserWorkerApi, workerApi],
+    [parserWorkerApi, workerApi, references.revision],
   );
+
+  const refreshAnalysis = async () => {
+    if (!workerApi || !parseResult || processingRef.current || references.busy) return;
+    processingRef.current = true;
+    setIsMatching(true);
+    setMatchError(null);
+    progressPhaseRef.current = "snps";
+    try {
+      const updated = await workerApi.matchSNPs(
+        parseResult.genotypes,
+        proxy((current: number, total: number) => {
+          const percent = total ? (current / total) * 100 : 0;
+          if (progressBarRef.current) progressBarRef.current.style.width = `${percent}%`;
+          if (progressTextRef.current) progressTextRef.current.textContent = `${Math.round(percent)}% complete`;
+        }),
+      );
+      setMatches(updated);
+      setIsMatching(false);
+      setIsMatchingGenosets(true);
+      const related = await workerApi.matchGenosets(
+        updated,
+        proxy(() => undefined),
+      );
+      setGenosets(related);
+      setAnalyzedReferenceRevision(references.revision);
+    } catch (error) {
+      setMatchError(error instanceof Error ? error : new Error("Could not update this analysis."));
+    }
+    progressPhaseRef.current = null;
+    setIsMatching(false);
+    setIsMatchingGenosets(false);
+    processingRef.current = false;
+  };
 
   const handleReset = useCallback(() => {
     setFileName(null);
@@ -258,6 +301,7 @@ function App() {
     isParserWorkerReady &&
     isWorkerReady &&
     !isProcessing &&
+    !references.busy &&
     !dbError &&
     !workerError &&
     !parserWorkerError;
@@ -274,7 +318,7 @@ function App() {
     : isMatching
       ? isWaitingForDatabase
         ? "Preparing the reference database"
-        : "Finding your SNPedia matches"
+        : "Finding your reference matches"
       : "Checking related genosets";
   const processingDetail = isParsing
     ? "Detecting the format and reading your genotype records."
@@ -307,7 +351,7 @@ function App() {
             aria-label="Workspace view"
             className="order-3 flex w-full gap-1 rounded-lg bg-slate-100/80 p-1 sm:order-2 sm:w-auto"
           >
-            {(["upload", "browse"] as const).map((view) => (
+            {(["upload", "browse", "references"] as const).map((view) => (
               <button
                 key={view}
                 type="button"
@@ -315,13 +359,19 @@ function App() {
                 disabled={isProcessing}
                 aria-current={mode === view ? "page" : undefined}
                 className={twMerge(
-                  "flex-1 cursor-pointer rounded-md px-4 py-2 text-sm font-medium whitespace-nowrap transition-colors disabled:cursor-wait disabled:opacity-50 sm:flex-none",
+                  "flex-1 cursor-pointer rounded-md px-2.5 py-2 text-xs font-medium whitespace-nowrap transition-colors disabled:cursor-wait disabled:opacity-50 sm:flex-none sm:px-4 sm:text-sm",
                   mode === view
                     ? "bg-white text-brand-700 shadow-sm ring-1 ring-slate-200/60"
                     : "text-slate-500 hover:text-slate-900",
                 )}
               >
-                {view === "upload" ? (hasResults ? "Your analysis" : "Analyze file") : "Browse reference"}
+                {view === "upload"
+                  ? hasResults
+                    ? "Your analysis"
+                    : "Analyze file"
+                  : view === "browse"
+                    ? "Browse reference"
+                    : "Data sources"}
               </button>
             ))}
           </nav>
@@ -365,7 +415,12 @@ function App() {
         {mode === "browse" &&
           !isProcessing &&
           (isDatabaseReady && workerApi ? (
-            <SNPBrowser workerApi={workerApi} />
+            <SNPBrowser
+              workerApi={workerApi}
+              referencePacks={references.packs}
+              referenceRevision={references.revision}
+              onManageReferences={() => setMode("references")}
+            />
           ) : !hasError ? (
             <section className="surface-panel px-6 py-20 text-center" aria-busy="true">
               <p className="section-label mb-3">Reference database</p>
@@ -386,6 +441,22 @@ function App() {
             </section>
           ) : null)}
 
+        {mode === "references" && !isProcessing && (
+          <ReferenceLibrary
+            packs={references.packs}
+            loading={references.loading}
+            error={references.error}
+            busy={references.busy}
+            clearing={references.clearing}
+            cleared={references.cleared}
+            onDownload={references.download}
+            onRemove={references.remove}
+            onToggle={references.toggle}
+            onRetry={references.retry}
+            onClear={references.clear}
+          />
+        )}
+
         {isLandingView && (
           <section className="grid items-center gap-8 py-5 lg:min-h-[660px] lg:grid-cols-[1fr_1.05fr] lg:gap-14 lg:py-12 xl:gap-20">
             <div className="max-w-xl">
@@ -394,8 +465,8 @@ function App() {
                 A clearer view of your genetic data.
               </h1>
               <p className="mt-6 max-w-lg text-base leading-7 text-slate-600 sm:text-lg">
-                Connect your raw DNA export to SNPedia. Explore individual variants, discover related genosets, and keep
-                the findings that matter to you.
+                Connect your raw DNA export to SNPedia and additional reference datasets. Explore individual variants,
+                discover related genosets, and keep the findings that matter to you.
               </p>
               <div className="my-8 h-px w-14 bg-brand-500" />
               <ol className="space-y-5">
@@ -508,7 +579,8 @@ function App() {
                 </h1>
                 {parseResult && (
                   <p className="mt-2 text-xs text-slate-500">
-                    {parseResult.genotypes.length.toLocaleString()} variants read
+                    {parseResult.genotypes.length.toLocaleString()}{" "}
+                    {parseResult.genotypes.length === 1 ? "variant" : "variants"} read
                     {detectedFormat && (
                       <>
                         {" "}
@@ -525,7 +597,27 @@ function App() {
                 Analyze another file
               </button>
             </div>
-            <ResultsDisplay matches={matches} genosets={genosets} />
+            {analyzedReferenceRevision !== references.revision && (
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3">
+                <p className="text-sm text-brand-800">
+                  Your enabled reference datasets have changed. Update this analysis to include them.
+                </p>
+                <button
+                  type="button"
+                  className="secondary-button"
+                  disabled={references.busy}
+                  onClick={() => void refreshAnalysis()}
+                >
+                  Update analysis
+                </button>
+              </div>
+            )}
+            <ResultsDisplay
+              matches={matches}
+              genosets={genosets}
+              workerApi={workerApi!}
+              referenceRevision={references.revision}
+            />
           </>
         )}
 
@@ -536,14 +628,14 @@ function App() {
           )}
         >
           <span>A private workspace for genetic exploration.</span>
-          <a
-            href="https://www.snpedia.com/"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="rounded-sm hover:text-brand-700"
+          <button
+            type="button"
+            onClick={() => setMode("references")}
+            disabled={isProcessing}
+            className="cursor-pointer rounded-sm hover:text-brand-700"
           >
-            Reference annotations from SNPedia ↗
-          </a>
+            SNPedia + {references.packs.filter((pack) => pack.enabled).length} additional datasets · Manage sources
+          </button>
         </footer>
       </main>
     </div>

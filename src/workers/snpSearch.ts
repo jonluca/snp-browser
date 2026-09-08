@@ -2,7 +2,13 @@ import type { Database } from "sql.js";
 import type { SNPRecord } from "../types/snp";
 
 export type SNPSearchSort = "relevance" | "rsid-asc" | "rsid-desc";
+export const MAX_REFERENCE_EXPORT_ROWS = 100_000;
+export type ReferenceSearchMode = "variant" | "gene" | "all-fields";
 export interface SNPSearchFilters {
+  referenceSearchMode?: ReferenceSearchMode;
+  referenceSearchId?: string;
+  referenceExport?: boolean;
+  referencePackId?: string;
   searchTerm?: string;
   chromosome?: string;
   gene?: string;

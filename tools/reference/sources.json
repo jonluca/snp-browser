@@ -1,0 +1,69 @@
+{
+  "clinvar": {
+    "name": "ClinVar",
+    "description": "Submitted clinical classifications, conditions, review status, and evaluation dates.",
+    "homepage": "https://www.ncbi.nlm.nih.gov/clinvar/",
+    "license": "NCBI molecular data use policy",
+    "licenseUrl": "https://www.ncbi.nlm.nih.gov/home/about/policies/",
+    "attribution": "ClinVar, National Center for Biotechnology Information, U.S. National Library of Medicine. Converted to an indexed local reference format; original assertions retained.",
+    "downloads": "https://www.ncbi.nlm.nih.gov/clinvar/docs/downloads/",
+    "exampleUrl": "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz"
+  },
+  "dbsnp": {
+    "name": "dbSNP",
+    "description": "Reference variant identifiers, assembly-specific alleles, and merged identifiers.",
+    "homepage": "https://www.ncbi.nlm.nih.gov/snp/",
+    "license": "NCBI molecular data use policy",
+    "licenseUrl": "https://www.ncbi.nlm.nih.gov/home/about/policies/",
+    "attribution": "dbSNP, National Center for Biotechnology Information, U.S. National Library of Medicine. Converted to an indexed local reference format.",
+    "downloads": "https://www.ncbi.nlm.nih.gov/snp/docs/RefSNP_about/",
+    "exampleUrl": "https://api.ncbi.nlm.nih.gov/variation/v0/refsnp/429358"
+  },
+  "gnomad": {
+    "name": "gnomAD",
+    "description": "Allele counts, frequencies, ancestry-group frequencies, and source quality filters.",
+    "homepage": "https://gnomad.broadinstitute.org/",
+    "license": "Creative Commons CC0 1.0 (primary frequency data)",
+    "licenseUrl": "https://gnomad.broadinstitute.org/terms",
+    "attribution": "Genome Aggregation Database (gnomAD), Broad Institute and contributing studies. Converted to an indexed local reference format. Population frequency is not an individual's ancestry or disease probability.",
+    "downloads": "https://gnomad.broadinstitute.org/downloads"
+  },
+  "gwas": {
+    "name": "GWAS Catalog",
+    "description": "Published variant–trait associations, reported effect sizes, study populations, and publications.",
+    "homepage": "https://www.ebi.ac.uk/gwas/",
+    "license": "EMBL-EBI Terms of Use (curated association data)",
+    "licenseUrl": "https://www.ebi.ac.uk/about/terms-of-use/",
+    "attribution": "NHGRI-EBI GWAS Catalog. Converted curated associations; study findings are retained as variant context without inferring individual risk.",
+    "downloads": "https://www.ebi.ac.uk/gwas/docs/file-downloads"
+  },
+  "ensembl": {
+    "name": "Ensembl VEP",
+    "description": "Gene and transcript consequences, protein changes, and source prediction annotations.",
+    "homepage": "https://www.ensembl.org/info/docs/tools/vep/index.html",
+    "license": "Ensembl data use policy; retain third-party constraints",
+    "licenseUrl": "https://www.ensembl.org/info/about/legal/disclaimer.html",
+    "attribution": "Ensembl Variant Effect Predictor, EMBL-EBI. Precomputed public reference variants; no user variants are sent to Ensembl.",
+    "downloads": "https://www.ensembl.org/info/docs/tools/vep/vep_formats.html",
+    "exampleUrl": "https://rest.ensembl.org/vep/human/id/rs429358?content-type=application/json"
+  },
+  "clinpgx": {
+    "name": "ClinPGx / PharmGKB",
+    "description": "Curated pharmacogenomic evidence, evidence levels, and drug-response annotations.",
+    "homepage": "https://www.clinpgx.org/",
+    "license": "Creative Commons Attribution-ShareAlike 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by-sa/4.0/",
+    "attribution": "ClinPGx / PharmGKB, Stanford University and contributing curators. Data converted to an indexed reference format; this derived data pack is distributed under CC BY-SA 4.0. No endorsement is implied.",
+    "downloads": "https://www.clinpgx.org/downloads"
+  },
+  "cpic": {
+    "name": "CPIC",
+    "description": "Gene–drug evidence levels and published guideline links where available, without inferring diplotypes or prescribing advice.",
+    "homepage": "https://www.clinpgx.org/",
+    "license": "Creative Commons CC0 1.0",
+    "licenseUrl": "https://github.com/cpicpgx/cpic-data/blob/main/LICENSE.md",
+    "attribution": "Clinical Pharmacogenetics Implementation Consortium (CPIC), Stanford University and St. Jude Children's Research Hospital. Converted gene–drug reference data. Guidelines and content are subject to updates; consult the linked current guideline. No endorsement is implied.",
+    "downloads": "https://github.com/cpicpgx/cpic-data/wiki",
+    "exampleUrl": "https://api.cpicpgx.org/v1/pair_view"
+  }
+}

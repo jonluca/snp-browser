@@ -1,5 +1,11 @@
+import type { GenomeAssembly } from "./annotations";
+
 // Raw database record from snps table
 export interface SNPRecord {
+  referenceKey?: string;
+  referenceSource?: string;
+  sourceUrl?: string;
+  annotations?: import("./annotations").AnnotationEvidence[];
   rsid: string;
   content: string;
   scraped_at?: string;
@@ -30,10 +36,20 @@ export interface GenosetRecord {
 
 // User's genotype from uploaded file
 export interface UserGenotype {
+  /** rsID/provider ID, or a stable build:chromosome:position:REF:ALT key for ID-less VCF SNPs. */
   rsid: string;
   chromosome: string;
   position: string;
   genotype: string;
+  /** Only set when the uploaded file explicitly identifies a supported build. */
+  assembly?: GenomeAssembly;
+  /** Reference allele, in the same orientation as genotype. */
+  ref?: string;
+  /** Comma-separated called non-reference alleles; absent for a reference-only call. */
+  alt?: string;
+  strand?: "plus" | "minus" | "unknown";
+  /** Records whether the source GT was phased, without inferring haplotypes. */
+  phased?: boolean;
 }
 
 // Parsed/enriched SNP data extracted from content fields
@@ -51,6 +67,8 @@ export interface ParsedSNPData {
 
 // User's genotype matched with database info
 export interface MatchedSNP extends UserGenotype {
+  annotationSummary?: import("./annotations").AnnotationMatchSummary;
+  annotations?: import("./annotations").AnnotationEvidence[];
   snpData: SNPRecord;
   genotypeData?: GenotypeRecord;
   parsedData: ParsedSNPData; // Enriched data extracted from content
@@ -71,6 +89,7 @@ export interface MatchedGenoset {
 }
 
 export interface ParseResult {
+  assembly?: GenomeAssembly;
   genotypes: UserGenotype[];
   totalLines: number;
   skippedLines: number;

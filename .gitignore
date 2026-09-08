@@ -23,3 +23,16 @@ dist-ssr
 *.sln
 *.sw?
 public/*.db
+public/references/**/*.db
+public/references/**/*.sqlite
+public/references/**/*.sqlite.gz
+public/references/**/*.sqlite.gzip
+public/references/**/*.sqlite3
+public/references/raw/
+public/references/.reference-build-*/
+public/references/.reference-compress-*/
+public/references/**/*-journal
+public/references/**/*-wal
+public/references/**/*-shm
+.reference-cache/
+__pycache__/

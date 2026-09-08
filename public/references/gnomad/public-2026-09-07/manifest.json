@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "createdAt": "2026-09-07T22:14:42Z",
+  "packs": [
+    {
+      "name": "gnomAD",
+      "description": "Allele counts, frequencies, ancestry-group frequencies, and source quality filters.",
+      "homepage": "https://gnomad.broadinstitute.org/",
+      "license": "Creative Commons CC0 1.0 (primary frequency data)",
+      "licenseUrl": "https://gnomad.broadinstitute.org/terms",
+      "attribution": "Genome Aggregation Database (gnomAD), Broad Institute and contributing studies. Converted to an indexed local reference format. Population frequency is not an individual's ancestry or disease probability.",
+      "id": "gnomad",
+      "source": "gnomad",
+      "version": "public-2026-09-07",
+      "builtAt": "2026-09-07T22:14:42Z",
+      "coverage": "Sample: first 100 records of gnomAD 4.1.1 exomes chromosome 22 VCF. GRCh38; not genome-wide coverage.",
+      "recordCount": 100,
+      "shards": [
+        {
+          "url": "/references/gnomad/public-2026-09-07/part-00001.sqlite",
+          "bytes": 618496,
+          "sha256": "607d0423205125ec94bff7d52e5d24209cecf969a7c75d1e037ce42bd8e81965",
+          "records": 100,
+          "routing": {
+            "algorithm": "fnv1a-double-v1",
+            "bitCount": 1744,
+            "hashes": 7,
+            "bits": "ICqAgkgEUXEXUBCQALqJAEGJUkTWgSBBcA6CUwACCQGFIC/hAiAAI+SBIAwEAQCCgIJ2HYSGYHg3xkCMAGYQMQBA4gZEAVBIhgEiKQUCMMBckoSoANCyQQYlWkUH1hAQQM3qgEgkOBIiAgYBSgQIGGAQDkisRIEZJ0QABA6sAcEFgAxLCACGw1C4gGjV7jIgCDYIIjIDOCS4BADAUMhCGExVKjSRIAAxAjTkIBwUJQEOhgi6LIAgsCAA0BTA1wIQYCSHMBTGigGLACkAQgAAhmQKLGoCCTMACEE="
+          }
+        }
+      ],
+      "sourceRelease": "4.1.1 exomes"
+    }
+  ]
+}

@@ -1,0 +1,43 @@
+{
+  "source": "clinvar",
+  "format": "vcf",
+  "assembly": "GRCh38",
+  "sourceRelease": "VCF 2026-09-05",
+  "adapterVersion": 1,
+  "pythonVersion": "3.14.7",
+  "sqliteVersion": "3.53.4",
+  "groupedByVariant": false,
+  "filters": {
+    "minimumAF": null,
+    "passOnly": false,
+    "canonicalOnly": false
+  },
+  "inputs": [
+    {
+      "name": "clinvar-full.vcf.gz",
+      "bytes": 193476678,
+      "sha256": "8cff3c5fb9bad5b2afaee6d3d2df11067349ba31b2c4e3d1bbdeaa5cb2fc098a"
+    }
+  ],
+  "urls": [
+    "https://ftp.ncbi.nlm.nih.gov/pub/clinvar/vcf_GRCh38/clinvar.vcf.gz"
+  ],
+  "fetchedAt": "2026-09-07",
+  "geneIndexValidation": {
+    "records": 4469028,
+    "changedGeneRows": 482276,
+    "sha256WithoutGene": "9bf37e23d89cda9405d24f1885e3c9378a9fc7d500dd4a4503550703a53ad68a",
+    "comparison": "All annotation payloads unchanged after removing only gene; every GENEINFO symbol retained in the indexed gene column.",
+    "seconds": 23.25
+  },
+  "assetCompression": {
+    "format": "gzip",
+    "level": 9,
+    "preparedAt": "2026-09-08T00:04:21Z",
+    "sourcePackVersion": "public-2026-09-07-full-genes",
+    "sourceCatalogSha256": "44cc3766987f6670f85a711d2f02f6596fa081096994e4af831019735dc9b55b",
+    "pythonVersion": "3.14.7",
+    "zlibVersion": "1.2.12",
+    "verification": "Every input SQLite hash and every fully inflated output hash match the original manifest; encoded hashes recorded separately."
+  }
+}
