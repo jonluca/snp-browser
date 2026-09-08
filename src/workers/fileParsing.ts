@@ -66,6 +66,12 @@ export async function parseFileWithDetection(
 
   // Parse using detected or specified parser
   const result = await parser.parse(fileContent, onProgress);
+  // Omitted metadata is unknown for an imported file. The low-level matcher
+  // still accepts older callers without metadata, so make this explicit here
+  // before any app import can reach genotype-specific interpretation.
+  for (const call of result.genotypes) {
+    if (call.strand === undefined) call.strand = "unknown";
+  }
 
   return {
     ...result,
@@ -92,7 +98,7 @@ function isZipFilename(filename: string): boolean {
 function isSupportedArchiveEntry(filename: string): boolean {
   const lowerFilename = filename.toLowerCase();
   if (lowerFilename.endsWith(".zip")) return false;
-  if (isVcfLikeFilename(lowerFilename)) return true;
+  if (isVcfLikeFilename(lowerFilename) || lowerFilename.endsWith(".pdf")) return true;
 
   return parserRegistry.getSupportedExtensions().some((extension) => lowerFilename.endsWith(extension));
 }
@@ -186,17 +192,63 @@ async function readZipEntry(buffer: ArrayBuffer, entry: ZipEntry): Promise<Uint8
   throw new Error(`ZIP entry "${entry.filename}" uses unsupported compression method ${entry.compressionMethod}.`);
 }
 
-async function extractSupportedFileFromZip(file: File): Promise<File> {
-  const buffer = await file.arrayBuffer();
-  const entries = readZipEntries(buffer);
-  const entry = entries.find((candidate) => isSupportedArchiveEntry(candidate.filename));
-
-  if (!entry) {
-    throw new Error("No supported DNA data file was found inside the ZIP archive.");
+async function archiveDetectionContent(file: File): Promise<string> {
+  if (file.name.toLowerCase().endsWith(".gz")) {
+    return parserVCF.readDetectionPrefix(file);
   }
+  // Promethease stores its data after the presentation scripts, which can be
+  // much longer than the header of a raw genotype export.
+  if (/\.html?$/i.test(file.name)) return file.text();
+  return file.slice(0, 256 * 1024).text();
+}
 
-  const entryBytes = await readZipEntry(buffer, entry);
-  return new File([bytesToArrayBuffer(entryBytes)], entry.filename);
+async function extractSupportedFileFromZip(file: File, parserId?: string): Promise<File> {
+  const buffer = await file.arrayBuffer();
+  const entries = readZipEntries(buffer).filter(
+    (candidate) =>
+      isSupportedArchiveEntry(candidate.filename) &&
+      !candidate.filename.split("/").some((part) => part.startsWith(".") || part === "__MACOSX"),
+  );
+  let selected: File | undefined;
+  const selectedParser = parserId ? parserRegistry.get(parserId) : undefined;
+  const fallback: File[] = [];
+  for (const entry of entries) {
+    const entryBytes = await readZipEntry(buffer, entry);
+    const candidate = new File([bytesToArrayBuffer(entryBytes)], entry.filename);
+    const content = await archiveDetectionContent(candidate);
+    const isPdf = content.startsWith("%PDF-");
+    const isVcf =
+      (isVcfLikeFilename(candidate.name) || candidate.name.toLowerCase().endsWith(".gz")) &&
+      /^##fileformat=VCFv[34]\./i.test(content);
+    const recognized = parserId
+      ? parserId === "pdf"
+        ? isPdf
+        : (parserId === parserVCF.metadata.id && isVcf) || selectedParser?.validate(content).valid
+      : isPdf || isVcf || Boolean(parserRegistry.detectFormat(content).parser);
+    if (recognized) {
+      if (selected) {
+        throw new Error(
+          "The ZIP archive contains multiple supported DNA files or reports. Extract it and select the file you want to analyze.",
+        );
+      }
+      selected = candidate;
+    } else if (
+      selectedParser?.metadata.fileExtensions.some((extension) => entry.filename.toLowerCase().endsWith(extension))
+    ) {
+      // Manual provider selection intentionally supports headerless raw files,
+      // but README files must not win simply by appearing first in an archive.
+      const rawRows = content
+        .split("\n")
+        .slice(0, 100)
+        .some((line) => /^\s*["']?(?:rs|i)\d+["']?[,\t ]+.+[,\t ]+["']?\d+["']?[,\t ]+["']?[ACGTID-]/i.test(line));
+      if (rawRows) fallback.push(candidate);
+    }
+  }
+  if (selected) return selected;
+  if (fallback.length === 1) return fallback[0];
+  if (fallback.length > 1)
+    throw new Error("The ZIP archive contains multiple possible DNA data files. Extract it and select one file.");
+  throw new Error("No supported DNA data file or report was found inside the ZIP archive.");
 }
 
 export async function parseFileBlobWithDetection(
@@ -205,10 +257,23 @@ export async function parseFileBlobWithDetection(
   parserId?: string,
 ): Promise<ParseResult & { detectedFormat?: string }> {
   if (isZipFilename(file.name)) {
-    return parseFileBlobWithDetection(await extractSupportedFileFromZip(file), onProgress, parserId);
+    return parseFileBlobWithDetection(await extractSupportedFileFromZip(file, parserId), onProgress, parserId);
   }
 
-  if (parserId === parserVCF.metadata.id || (!parserId && isVcfLikeFilename(file.name))) {
+  if (
+    parserId === "pdf" ||
+    (!parserId && (file.name.toLowerCase().endsWith(".pdf") || (await file.slice(0, 5).text()) === "%PDF-"))
+  ) {
+    const { parsePdfReport } = await import("../parsers/pdf");
+    return { ...(await parsePdfReport(file, onProgress)), detectedFormat: "pdf" };
+  }
+
+  const genericGzipVcf =
+    !parserId &&
+    !isVcfLikeFilename(file.name) &&
+    file.name.toLowerCase().endsWith(".gz") &&
+    /^##fileformat=VCFv[34]\./i.test(await parserVCF.readDetectionPrefix(file));
+  if (parserId === parserVCF.metadata.id || (!parserId && (isVcfLikeFilename(file.name) || genericGzipVcf))) {
     const result = await parserVCF.parseBlob(file, onProgress);
     return {
       ...result,

@@ -33,8 +33,12 @@ See [reference preparation and publishing](docs/reference-data.md) for reproduci
   - MyHeritage (CSV)
   - FamilyTreeDNA (CSV)
   - Vitagene (TXT, CSV)
-  - VCF/gVCF (Variant Call Format, including common whole-genome gVCF exports)
-  - ZIP archives containing supported raw data files
+  - VCF/gVCF, including compressed whole-genome exports, insertions, deletions, and multi-base calls
+  - Promethease HTML reports with embedded personal genotype data
+  - PDF reports, displayed as searchable source text without inferring raw genotype calls
+  - ZIP archives containing a supported data file or report
+- **Imported calls**: Browse all retained calls, including variants without annotations, and filter insertions, deletions, and multi-base calls
+- **Source reports**: Search and page through locally extracted PDF or Promethease text. Imported HTML scripts never run
 - **Automatic Format Detection**: Smart detection system identifies file format with confidence scoring
 - **Client-side SQLite**: Process genomic data entirely in the browser using sql.js
 - **Independent reference sources**: Browse and match downloaded public datasets beyond SNPedia, with assembly, allele, review, population, study, and gene–drug context kept distinct
@@ -43,6 +47,10 @@ See [reference preparation and publishing](docs/reference-data.md) for reproduci
 - **Web Worker Processing**: Offload heavy computations using Comlink for a smooth UI experience
 - **Modern React**: Built with React 19 and the React Compiler for optimal performance
 - **Extensible Architecture**: Easy to add support for new DNA file formats
+
+VCF sequence calls preserve explicit allele boundaries. Indel evidence requires the same build, position, REF and called ALT representation; the app does not guess equivalent representations by left-aligning or converting genome builds. Calls on noncanonical contigs remain available in Imported calls. Reference blocks, symbolic alleles, and missing genotypes are reported in import notes when skipped.
+
+Promethease imports only explicit personal calls from the report's embedded data. Historical annotations and genosets remain source report text. Annotation coordinates are not substituted for the original call's coordinates. PDFs preserve extractable text and page numbers; scanned pages need local OCR, and images or charts are not transcribed. These imports and the PDF parser run entirely on the device with locally served application assets.
 
 ## Tech Stack
 
@@ -143,7 +151,7 @@ For `bun dev`, [prepare local reference assets](docs/reference-data.md) or set `
 - **Format**: CSV with sample, chromosome, position, rsID, and genotype columns
 - **Extensions**: `.csv`
 - **Structure**: `SampleID,Chromosome,Position,RSID,Genotype,ReferenceVersion`
-- **Example**: `L2137024,2,136707981,rs6754311,CC,GRCh37`
+- **Example**: `synthetic-sample,1,100,rs100,AG,GRCh37`
 
 ### Vitagene
 
@@ -156,13 +164,27 @@ For `bun dev`, [prepare local reference assets](docs/reference-data.md) or set `
 ### VCF / gVCF
 
 - **Format**: Variant Call Format or genomic VCF with `GT` genotype sample fields
-- **Extensions**: `.vcf`, `.gvcf`, `.g.vcf`, `.vcf.gz`, `.g.vcf.gz`
+- **Extensions**: `.vcf`, `.gvcf`, `.g.vcf`, `.vcf.gz`, `.g.vcf.gz`, `.gz`
 - **Structure**: `#CHROM POS ID REF ALT QUAL FILTER INFO FORMAT SAMPLE`
 - **Example**: `1    82154    rs4477212    A    G    .    PASS    .    GT    0/1`
-- **Note**: gVCF reference blocks and indels are skipped. SNP records with rsIDs can match SNPedia. Records with a missing ID (`.`) are retained when the header explicitly declares GRCh37 or GRCh38 and the record has supported chromosome coordinates and a SNP alternate. Their display ID includes the build, chromosome, position, REF, and ALT; downloaded reference sources match them by coordinates. Missing-ID records without a known build are skipped.
+- **Note**: Concrete SNP, insertion, deletion and multi-base calls are retained. Calls without an rsID need an explicit GRCh37/GRCh38 build and valid coordinates; their display ID includes the build, contig, position, REF and ALT. Noncanonical contigs remain inspectable without claiming a canonical reference match. Reference blocks and unsupported symbolic calls are counted in import notes.
+
+### Promethease
+
+- **Format**: HTML with embedded personal genotype records, or its ZIP download
+- **Extensions**: `.html`, `.htm`, `.zip`
+- **Views**: New reference matches, imported calls, and searchable historical report text
+- **Note**: Only explicit personal calls are imported. Genoset notes and literature examples stay in the source report. Unknown orientation remains unresolved.
+
+### PDF Reports
+
+- **Format**: Text-bearing PDF reports
+- **Extensions**: `.pdf`, including a PDF inside a ZIP
+- **View**: Searchable, paginated source text; raw genotypes are not inferred from narrative findings
+- **Note**: Password-protected reports must be unlocked locally. Image-only scans require local OCR.
 
 The application automatically detects the file format when you upload your DNA data.
-For provider downloads delivered as ZIP archives, upload the ZIP directly; the app will use the first supported raw data file inside.
+For ZIP downloads, the app detects the supported data file or report by its content, skipping unrelated files. Archives with multiple recognized inputs must be extracted so you can choose one file explicitly.
 
 ## Architecture
 

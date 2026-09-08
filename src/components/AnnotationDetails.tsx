@@ -135,7 +135,7 @@ function EvidenceCard({ annotation }: { annotation: AnnotationEvidence }) {
         {annotation.assembly && <span>{annotation.assembly}</span>}
         {locus && <span className="font-mono">{locus}</span>}
         {annotation.alt && (
-          <span className="font-mono">
+          <span className="min-w-0 max-w-full break-all font-mono">
             {annotation.ref ? `${annotation.ref} → ${annotation.alt}` : `Allele ${annotation.alt}`}
           </span>
         )}

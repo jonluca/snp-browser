@@ -26,11 +26,14 @@ const GZIP_ID1 = 0x1f;
 const GZIP_ID2 = 0x8b;
 const GZIP_DEFLATE_METHOD = 0x08;
 const GZIP_FLAG_FEXTRA = 0x04;
+// VCF 4.5 section 1.4.7 uses SAM reference-name syntax, including alternate
+// contigs such as names containing '*'. Encode delimiters in coordinate IDs.
+const VCF_CONTIG = /^[0-9A-Za-z!#$%&+./:;?@^_|~-][0-9A-Za-z!#$%&*+./:;=?@^_|~-]*$/;
 
 type VcfGenotypeParseResult =
-  | { status: "called"; genotype: string; alt?: string; phased?: boolean }
+  | { status: "called"; genotype: string; alt?: string; phased?: boolean; alleles?: string[] }
   | { status: "invalid" }
-  | { status: "unsupported" };
+  | { status: "unsupported"; reason: string };
 
 type BgzfBlockHeader = { blockSize: number; payloadOffset: number };
 type BgzfHeaderResult = BgzfBlockHeader | "need-more" | null;
@@ -43,13 +46,14 @@ interface VcfParseState {
   headerFound: boolean;
   metadataLines: string[];
   fileMetadata: FileMetadata;
+  skippedRecords: Map<string, number>;
 }
 
 /**
  * Parser for VCF genotype files.
  *
  * VCF records contain allele indexes in the sample GT field. This parser maps
- * those indexes back to REF/ALT bases. Records without an ID are retained only
+ * those indexes back to complete REF/ALT sequences. Records without an ID are retained only
  * when an explicit supported assembly gives their coordinates a stable identity.
  */
 export class ParserVCF implements DNAParser {
@@ -135,6 +139,31 @@ export class ParserVCF implements DNAParser {
     return this.finishParse(state);
   }
 
+  /** Sniff compressed archives through the same gzip/BGZF decoder used for import. */
+  async readDetectionPrefix(file: Blob & { name?: string }, maximumBytes = 256 * 1024): Promise<string> {
+    const stream = await this.openTextStream(file, () => {});
+    const reader = stream.getReader();
+    const decoder = new TextDecoder();
+    let content = "";
+    let bytesRead = 0;
+    try {
+      while (bytesRead < maximumBytes) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const prefix = value.subarray(0, maximumBytes - bytesRead);
+        bytesRead += prefix.byteLength;
+        content += decoder.decode(prefix, { stream: true });
+      }
+      return content + decoder.decode();
+    } finally {
+      try {
+        await reader.cancel();
+      } finally {
+        reader.releaseLock();
+      }
+    }
+  }
+
   async parseBlob(file: Blob & { name?: string }, onProgress: ProgressCallback): Promise<ParseResult> {
     const state = this.createParseState(0);
     const totalBytes = file.size;
@@ -183,6 +212,7 @@ export class ParserVCF implements DNAParser {
       headerFound: false,
       metadataLines: [],
       fileMetadata: {},
+      skippedRecords: new Map(),
     };
   }
 
@@ -193,6 +223,9 @@ export class ParserVCF implements DNAParser {
         totalLines: state.totalLines,
         skippedLines: state.skippedLines,
         errors: state.errors,
+        ...(state.skippedRecords.size
+          ? { warnings: [...state.skippedRecords].map(([reason, count]) => `${count.toLocaleString()} ${reason}`) }
+          : {}),
       },
       state.fileMetadata,
     );
@@ -456,10 +489,34 @@ export class ParserVCF implements DNAParser {
     }
 
     const [chromosome, position, id, ref, alt] = parts;
+    // Reference blocks describe an interval, not one variant. Do not manufacture
+    // a call at their first base, even when a producer assigns the block an ID.
+    const hasConcreteAlt = alt.split(",").some((allele) => /^[ACGT]+$/i.test(allele));
+    const referenceBlock = !hasConcreteAlt && /^(?:<NON_REF>|<\*>|\.)(?:,(?:<NON_REF>|<\*>))*$/i.test(alt);
+    const blockLengthIndex = referenceBlock ? parts[8]?.split(":").indexOf("LEN") : -1;
+    const blockLength =
+      blockLengthIndex !== undefined && blockLengthIndex >= 0 ? Number(parts[9]?.split(":")[blockLengthIndex]) : 0;
+    if (
+      referenceBlock &&
+      (id === "." || blockLength > 1 || Number(/(?:^|;)END=(\d+)(?:;|$)/.exec(parts[7])?.[1]) > Number(position))
+    ) {
+      this.skipRecord(state, "reference blocks were skipped; they do not identify a concrete alternate allele.");
+      return;
+    }
+    if (!hasConcreteAlt && !referenceBlock) {
+      this.skipRecord(
+        state,
+        "calls used symbolic, breakend, spanning-deletion, or ambiguous alleles without an exact sequence.",
+      );
+      return;
+    }
     const rsid = this.variantId(id, chromosome, position, ref, alt, state.fileMetadata.assembly);
 
     if (!rsid) {
-      state.skippedLines++;
+      this.skipRecord(
+        state,
+        "records lacked a supported identifier or explicit genome build and concrete sequence coordinates.",
+      );
       return;
     }
 
@@ -471,12 +528,12 @@ export class ParserVCF implements DNAParser {
 
     const genotype = this.parseSampleGenotype(ref ?? "", alt ?? "", parts[8], parts[9]);
     if (genotype.status === "unsupported") {
-      state.skippedLines++;
+      this.skipRecord(state, genotype.reason);
       return;
     }
 
     if (genotype.status === "invalid") {
-      state.errors.push(`Line ${lineNumber}: Could not convert GT field to SNP bases for ${rsid}`);
+      state.errors.push(`Line ${lineNumber}: Could not convert GT field to allele sequences`);
       state.skippedLines++;
       return;
     }
@@ -490,7 +547,13 @@ export class ParserVCF implements DNAParser {
       ...(genotype.alt ? { alt: genotype.alt } : {}),
       strand: "plus",
       ...(genotype.phased !== undefined ? { phased: genotype.phased } : {}),
+      ...(genotype.alleles ? { alleles: genotype.alleles } : {}),
     });
+  }
+
+  private skipRecord(state: VcfParseState, reason: string): void {
+    state.skippedLines++;
+    state.skippedRecords.set(reason, (state.skippedRecords.get(reason) ?? 0) + 1);
   }
 
   private splitColumns(line: string): string[] {
@@ -513,17 +576,18 @@ export class ParserVCF implements DNAParser {
   ): string | null {
     const rsid = this.extractRsid(id);
     if (rsid) return rsid;
-    if (id !== "." || !assembly || !/^[ACGT]$/i.test(ref)) return null;
-    const normalizedChromosome = normalizeChromosome(chromosome);
+    if (!assembly || !/^[ACGT]+$/i.test(ref)) return null;
+    const normalizedChromosome =
+      normalizeChromosome(chromosome) ?? (VCF_CONTIG.test(chromosome) ? encodeURIComponent(chromosome) : undefined);
     const normalizedPosition = normalizePosition(position);
-    // A gVCF reference block has no concrete SNP alternate. Keep the declared
-    // SNP alternates in the display key; called ALT metadata remains separate.
+    // Preserve VCF padding and full allele sequences. Equivalent representations
+    // at a different position are not silently normalized without a reference genome.
     const alternates = [
       ...new Set(
         alt
           .toUpperCase()
           .split(",")
-          .filter((allele) => /^[ACGT]$/.test(allele)),
+          .filter((allele) => /^[ACGT]+$/.test(allele)),
       ),
     ].sort();
     if (!normalizedChromosome || !normalizedPosition || !alternates.length) return null;
@@ -531,24 +595,23 @@ export class ParserVCF implements DNAParser {
   }
 
   private normalizeChromosome(chromosome: string): string {
-    const normalized = chromosome.replace(/^chr/i, "");
-    return normalized.toUpperCase() === "M" ? "MT" : normalized;
+    // Preserve noncanonical contig names exactly. The annotation matcher only
+    // accepts canonical chromosomes, while the raw import still retains calls.
+    return normalizeChromosome(chromosome) ?? chromosome;
   }
 
   private parseSampleGenotype(ref: string, alt: string, format: string, sample: string): VcfGenotypeParseResult {
-    // This browser currently supports SNP calls only. An alternate base paired
-    // with a multi-base REF is still an indel and cannot use SNP identity rules.
-    if (!/^[ACGT]$/i.test(ref)) return { status: "unsupported" };
+    if (!/^[ACGT]+$/i.test(ref))
+      return { status: "unsupported", reason: "records had an ambiguous or unsupported reference sequence." };
     const formatFields = format.split(":");
     const sampleFields = sample.split(":");
     const genotypeIndex = formatFields.indexOf("GT");
-    if (genotypeIndex < 0) return { status: "unsupported" };
+    if (genotypeIndex < 0) return { status: "unsupported", reason: "records did not contain a GT sample genotype." };
     const genotypeField = sampleFields[genotypeIndex];
 
-    if (!genotypeField) return { status: "invalid" };
+    if (!genotypeField || !/^[|/]?(?:\d+|\.)(?:[|/](?:\d+|\.))*$/.test(genotypeField)) return { status: "invalid" };
 
-    const alleleIndexes = genotypeField.split(/[/|]/);
-    if (alleleIndexes.length === 0) return { status: "invalid" };
+    const alleleIndexes = genotypeField.replace(/^[|/]/, "").split(/[/|]/);
 
     if (alleleIndexes.some((alleleIndex) => alleleIndex === ".")) {
       return { status: "called", genotype: "--" };
@@ -558,11 +621,13 @@ export class ParserVCF implements DNAParser {
     const genotypeBases: string[] = [];
 
     for (const alleleIndex of alleleIndexes) {
-      if (!/^\d+$/.test(alleleIndex)) return { status: "invalid" };
-
       const allele = alleles[Number(alleleIndex)]?.toLowerCase();
-      if (!allele || !/^[acgt]$/.test(allele)) {
-        return { status: "unsupported" };
+      if (!allele) return { status: "invalid" };
+      if (!/^[acgt]+$/.test(allele)) {
+        return {
+          status: "unsupported",
+          reason: "calls used symbolic, breakend, spanning-deletion, or ambiguous alleles without an exact sequence.",
+        };
       }
 
       genotypeBases.push(allele);
@@ -573,9 +638,14 @@ export class ParserVCF implements DNAParser {
         alleleIndexes.filter((index) => Number(index) > 0).map((index) => alleles[Number(index)].toUpperCase()),
       ),
     ];
+    const explicitAlleles =
+      ref.length > 1 || genotypeBases.some((allele) => allele.length > 1) || genotypeBases.length > 2;
     return {
       status: "called",
-      genotype: this.normalizeGenotypeOrder(genotypeBases),
+      genotype: explicitAlleles
+        ? genotypeField.replace(/\d+/g, (index) => alleles[Number(index)].toLowerCase())
+        : this.normalizeGenotypeOrder(genotypeBases),
+      ...(explicitAlleles ? { alleles: genotypeBases.map((allele) => allele.toUpperCase()) } : {}),
       ...(calledAlternates.length ? { alt: calledAlternates.sort().join(",") } : {}),
       ...(alleleIndexes.length > 1 ? { phased: genotypeField.includes("|") && !genotypeField.includes("/") } : {}),
     };

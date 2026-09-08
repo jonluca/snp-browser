@@ -95,3 +95,43 @@ test("rsID-only annotations remain reference context while exact loci and declar
     "unresolved",
   );
 });
+
+test("insertions, deletions, and MNV evidence require complete same-locus REF and called ALT sequences", () => {
+  for (const [ref, alt, alleles] of [
+    ["A", "AT", ["A", "AT"]],
+    ["AT", "A", ["AT", "A"]],
+    ["AC", "GT", ["AC", "GT"]],
+    ["AC", "G", ["G", "G"]],
+  ] as const) {
+    const call = { ...user, ref, alt, alleles: [...alleles], genotype: alleles.join("/") };
+    const record = { ...annotation, ref, alt };
+    expect(matchVariantAnnotation(call, record).matchType).toBe("allele");
+    for (const difference of [
+      { ref: undefined },
+      { ref: "C" },
+      { position: "101" },
+      { assembly: undefined },
+      { strand: "minus" as const },
+      { strand: "unknown" as const },
+      { alleles: undefined },
+      { alleles: [] },
+      { alleles: ["N", alt] },
+    ])
+      expect(matchVariantAnnotation({ ...call, ...difference }, record).matchType).toBe("unresolved");
+    expect(matchVariantAnnotation(call, { ...record, ref: undefined }).matchType).toBe("unresolved");
+    expect(matchVariantAnnotation(call, { ...record, alt: "<DEL>" }).matchType).toBe("unresolved");
+    expect(matchVariantAnnotation({ ...call, alleles: [ref, ref], genotype: `${ref}/${ref}` }, record).matchType).toBe(
+      "locus",
+    );
+  }
+});
+
+test("SNP letters inside a longer called allele cannot establish SNP or other sequence classifications", () => {
+  const call = { ...user, ref: "A", alt: "AG", genotype: "a/ag", alleles: ["A", "AG"] };
+  expect(matchVariantAnnotation(call, annotation).matchType).toBe("locus");
+  expect(matchVariantAnnotation(call, { ...annotation, alt: "AG" }).matchType).toBe("allele");
+  expect(matchVariantAnnotation(call, { ...annotation, ref: "AA", alt: "AAG" }).matchType).toBe("unresolved");
+  expect(matchVariantAnnotation(call, { ...annotation, position: 101, ref: "G", alt: "GG" }).matchType).toBe(
+    "unresolved",
+  );
+});

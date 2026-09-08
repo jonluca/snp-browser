@@ -15,6 +15,7 @@ const dbProxy = {
 export default defineConfig({
   plugins: [react(), babel({ presets: [reactCompilerPreset()] }), tailwindcss(), referenceAssets()],
   build: { copyPublicDir: false },
+  worker: { format: "es" },
   server: {
     proxy: dbProxy,
     watch: {

@@ -7,7 +7,7 @@ interface FileUploadProps {
   disabled?: boolean;
 }
 
-const SUPPORTED_EXTENSIONS = Array.from(new Set([...getSupportedExtensions(), ".zip"])).join(",");
+const SUPPORTED_EXTENSIONS = Array.from(new Set([...getSupportedExtensions(), ".zip", ".pdf"])).join(",");
 const SUPPORTED_FORMATS = getAllParsers();
 
 export function FileUpload({ onFileSelect, disabled = false }: FileUploadProps) {
@@ -119,7 +119,7 @@ export function FileUpload({ onFileSelect, disabled = false }: FileUploadProps) 
           {isDragging && !disabled ? "Release to start your analysis" : "Start with your DNA file"}
         </h2>
         <p id={`${inputId}-description`} className="mt-2 max-w-xs text-sm leading-6 text-slate-500">
-          Drag and drop a raw DNA export here, or choose a file from your device.
+          Drag and drop a DNA export or report here, or choose a file from your device.
         </p>
         <button
           type="button"
@@ -150,7 +150,7 @@ export function FileUpload({ onFileSelect, disabled = false }: FileUploadProps) 
           ))}
         </div>
         <p className="mt-3 border-t border-slate-200/70 pt-3 text-[11px] leading-5 text-slate-400">
-          TXT, CSV, VCF, gVCF, GZIP & ZIP archives
+          TXT, CSV, VCF, gVCF, GZIP, ZIP, Promethease HTML & PDF reports
         </p>
       </div>
     </div>

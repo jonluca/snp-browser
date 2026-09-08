@@ -11,7 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { Remote } from "comlink";
 import type { SNPMatcherWorkerApi } from "../workers/snpMatcher.worker";
 import { ANNOTATION_SOURCE_NAMES } from "../utils/annotationPresentation";
-import { countMatchVariants, createMatchRows, userCallIdentity } from "../utils/matchIdentity";
+import { countMatchVariants, createMatchRows, userCallIdentity, variantLabel } from "../utils/matchIdentity";
 
 type ViewMode = "snps" | "genosets";
 type SortMode = "magnitude" | "rsid";
@@ -39,6 +39,11 @@ const SNP_EXPORT_COLUMNS: CsvColumn<MatchedSNP>[] = [
   { header: "RSID", value: (match) => match.rsid },
   { header: "Gene Symbol", value: (match) => match.parsedData.geneSymbol },
   { header: "User Genotype", value: (match) => match.genotype },
+  { header: "Called Alleles", value: (match) => (match.alleles ? JSON.stringify(match.alleles) : undefined) },
+  { header: "User REF", value: (match) => match.ref },
+  { header: "Called ALT", value: (match) => match.alt },
+  { header: "User Strand", value: (match) => match.strand },
+  { header: "Phased", value: (match) => match.phased },
   { header: "Chromosome", value: (match) => match.chromosome },
   { header: "Position", value: (match) => match.position },
   { header: "SNPedia Genotype", value: (match) => match.genotypeData?.genotype },
@@ -148,14 +153,20 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
       >
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-baseline gap-2">
-            <span className="min-w-0 font-mono text-sm font-semibold text-slate-900 [overflow-wrap:anywhere]">
-              {match.rsid}
+            <span
+              title={match.rsid}
+              className="min-w-0 font-mono text-sm font-semibold text-slate-900 [overflow-wrap:anywhere]"
+            >
+              {variantLabel(match)}
             </span>
             {presentation.gene && (
               <span className="truncate text-xs font-medium text-slate-500">{presentation.gene}</span>
             )}
           </div>
-          <span className="shrink-0 rounded-md border border-slate-200 bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700">
+          <span
+            className="max-w-[45%] shrink-0 truncate rounded-md border border-slate-200 bg-white px-2 py-0.5 font-mono text-xs font-semibold text-slate-700"
+            title={match.genotype.toUpperCase()}
+          >
             {match.genotype.toUpperCase()}
           </span>
         </div>
@@ -358,9 +369,10 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
                       <h3
                         ref={detailRef}
                         tabIndex={-1}
+                        title={selectedSNP.rsid}
                         className="font-mono text-2xl font-semibold tracking-tight text-slate-950 outline-none [overflow-wrap:anywhere]"
                       >
-                        {selectedSNP.rsid}
+                        {variantLabel(selectedSNP)}
                       </h3>
                     </div>
                     {!selectedSNP.snpData.referenceSource && (
@@ -386,7 +398,7 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
                   >
                     <div className="bg-brand-50 p-3.5">
                       <dt className="text-[11px] font-medium text-brand-700">Your genotype</dt>
-                      <dd className="mt-1 font-mono text-lg font-semibold text-brand-700">
+                      <dd className="mt-1 break-all font-mono text-lg font-semibold text-brand-700">
                         {selectedSNP.genotype.toUpperCase()}
                       </dd>
                     </div>
@@ -420,6 +432,12 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
                     Chromosome {selectedSNP.chromosome} <span aria-hidden="true">·</span> Position{" "}
                     {selectedSNP.position} · {selectedSNP.assembly || "Genome build not declared"}
                   </p>
+                  {variantLabel(selectedSNP) !== selectedSNP.rsid && (
+                    <details className="mb-6 text-xs text-slate-500">
+                      <summary className="cursor-pointer font-medium">Full variant identifier</summary>
+                      <p className="mt-2 break-all font-mono">{selectedSNP.rsid}</p>
+                    </details>
+                  )}
                   {selectedSNP.genotypeData?.content ? (
                     <section className="border-t border-slate-200 pt-5">
                       <h4 className="mb-4 text-sm font-semibold text-slate-900">About your genotype</h4>
@@ -428,8 +446,8 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
                     </section>
                   ) : !selectedSNP.snpData.referenceSource ? (
                     <p className="rounded-xl bg-slate-50 p-4 text-sm leading-relaxed text-slate-600">
-                      This variant is in SNPedia, but no annotation matches your genotype. The notes below describe the
-                      variant in general.
+                      This SNPedia entry provides general variant information. A genotype-specific interpretation was
+                      not confirmed for this call.
                     </p>
                   ) : null}
                   <AnnotationDetails

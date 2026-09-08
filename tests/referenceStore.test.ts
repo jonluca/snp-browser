@@ -265,6 +265,26 @@ test("conflicting calls and unknown builds cannot become confirmed allele summar
   expect(unknown.summaries.get("rs123")?.alleleCount).toBe(0);
 });
 
+test("sequence matching preserves allele boundaries through conflict checks and offline evidence retrieval", async () => {
+  const source = await pack("clinvar", [[annotation("sequence", "rs123", { ref: "AC", alt: "GT" })]]);
+  serveCatalog([source]);
+  const references = store();
+  await references.initialize(catalogUrl);
+  await references.download(source.id, () => undefined);
+  requests = [];
+  const first = { ...user, ref: "AC", alt: "GT", genotype: "AC/GT", alleles: ["AC", "GT"] };
+  const identical = await references.match(
+    [first, { ...first, genotype: "GT/AC", alleles: ["GT", "AC"] }],
+    () => undefined,
+  );
+  expect(identical.summaries.get("rs123")).toMatchObject({ ambiguous: false, alleleCount: 1 });
+  const conflict = { ...first, genotype: "AG/CT", alleles: ["AG", "CT"], alt: "AG,CT" };
+  const result = await references.match([first, conflict], () => undefined);
+  expect(result.summaries.get("rs123")).toMatchObject({ ambiguous: true, alleleCount: 0, unresolvedCount: 1 });
+  expect(result.evidence.get("rs123")?.[0].matchType).toBe("unresolved");
+  expect(requests).toEqual([]);
+});
+
 test("cross-shard pagination preserves exact rsID ranking and literal wildcard search", async () => {
   const source = await pack("clinvar", [
     [annotation("prefix", "rs1234"), annotation("percent", "rs900", { title: "50% frequency" })],

@@ -100,9 +100,41 @@ export function matchVariantAnnotation(user: UserGenotype, annotation: VariantAn
   }
 
   const genotype = user.genotype.toUpperCase();
+  const allele = annotation.alt?.toUpperCase();
+  const sequenceCall = user.alleles !== undefined || (user.ref?.length ?? 0) > 1 || /[/|]/.test(genotype);
+  if (sequenceCall) {
+    if (!user.alleles?.length || user.alleles.some((value) => !/^[ACGT]+$/i.test(value))) {
+      return unresolved("Complete, explicit called allele sequences are required for this variant.");
+    }
+    // Sequence VCF coordinates refer to the forward reference's first base.
+    // Reverse-strand representations cannot be moved or reverse-complemented
+    // into equivalent indel coordinates without a reference genome.
+    if (user.strand !== "plus") return unresolved("Sequence alleles require a forward reference representation.");
+    if (!user.ref || !annotation.ref || !/^[ACGT]+$/i.test(user.ref) || !/^[ACGT]+$/i.test(annotation.ref)) {
+      return unresolved("Both reference sequences are required to confirm a sequence allele.");
+    }
+    if (user.ref.toUpperCase() !== annotation.ref.toUpperCase()) {
+      return unresolved(
+        "The reference sequence does not agree with the uploaded variant; no sequence normalization was applied.",
+      );
+    }
+    if (!allele || !/^[ACGT]+$/.test(allele)) {
+      return unresolved("The reference does not specify one exact alternate sequence.");
+    }
+    if (!user.alleles.some((value) => value.toUpperCase() === allele)) {
+      return {
+        matchType: "locus",
+        matchReason: "The annotated alternate sequence is not present in the uploaded genotype.",
+      };
+    }
+    return {
+      matchType: "allele",
+      matchReason:
+        "Called sequence confirmed using genome build, exact coordinates, and matching reference and alternate sequences.",
+    };
+  }
   if (!/^[ACGT]{1,2}$/.test(genotype))
     return unresolved("The uploaded genotype is missing or is not a supported SNP call.");
-  const allele = annotation.alt?.toUpperCase();
   if (!allele || !/^[ACGT]$/.test(allele)) {
     return unresolved("The reference does not specify a single supported alternate allele.");
   }

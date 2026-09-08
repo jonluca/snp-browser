@@ -73,9 +73,17 @@ function callSignature(user: UserGenotype): string {
     normalizeAssembly(user.assembly),
     normalizeChromosome(user.chromosome),
     normalizePosition(user.position),
-    orient(user.genotype).split("").sort().join(""),
+    user.alleles
+      ? user.alleles.map((allele) => orient(allele)).sort()
+      : /[/|]/.test(user.genotype)
+        ? user.genotype.split(/[/|]/).map(orient).sort()
+        : orient(user.genotype).split("").sort().join(""),
     user.ref ? orient(user.ref) : undefined,
-    user.strand === "plus" || user.strand === "minus" ? "plus" : "unknown",
+    user.alleles && user.strand === "minus"
+      ? "minus"
+      : user.strand === "plus" || user.strand === "minus"
+        ? "plus"
+        : "unknown",
   ]);
 }
 

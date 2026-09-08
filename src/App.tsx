@@ -3,6 +3,8 @@ import { twMerge } from "tailwind-merge";
 import { useSNPMatcherWorker, proxy } from "./hooks/useSNPMatcherWorker";
 import { FileUpload } from "./components/FileUpload";
 import { ResultsDisplay } from "./components/ResultsDisplay";
+import { ImportedReportView } from "./components/ImportedReportView";
+import { ImportedCallsView } from "./components/ImportedCallsView";
 import { SNPBrowser } from "./components/SNPBrowser";
 import { ReferenceLibrary } from "./components/ReferenceLibrary";
 import { useReferenceLibrary } from "./hooks/useReferenceLibrary";
@@ -45,6 +47,7 @@ function App() {
   const processingRef = useRef(false);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [detectedFormat, setDetectedFormat] = useState<string | null>(null);
+  const [resultView, setResultView] = useState<"matches" | "calls" | "report">("matches");
   const [isParsing, setIsParsing] = useState(false);
   const [matches, setMatches] = useState<MatchedSNP[] | null>(null);
   const [genosets, setGenosets] = useState<MatchedGenoset[] | null>(null);
@@ -135,48 +138,41 @@ function App() {
         setIsParsing(true);
         setMatchError(null);
 
-        const parseAsBlob = isVcfLikeFile(file) || isZipFile(file);
         const showByteProgress = isVcfLikeFile(file) && !isZipFile(file);
-        const result = parseAsBlob
-          ? await parserWorkerApi.parseFileBlob(
-              file,
-              proxy((current: number, total: number) => {
-                if (progressPhaseRef.current !== "parse") return;
-                const progress = total > 0 ? (current / total) * 100 : 0;
-                if (progressBarRef.current) {
-                  progressBarRef.current.style.width = `${progress}%`;
-                }
-                if (progressTextRef.current) {
-                  progressTextRef.current.textContent = showByteProgress
-                    ? `${formatBytes(current)} / ${formatBytes(total)} read`
-                    : `${current.toLocaleString()} / ${total.toLocaleString()} processed`;
-                }
-              }),
-            )
-          : await parserWorkerApi.parseFile(
-              await file.text(),
-              proxy((current: number, total: number) => {
-                if (progressPhaseRef.current !== "parse") return;
-                const progress = total > 0 ? (current / total) * 100 : 0;
-                if (progressBarRef.current) {
-                  progressBarRef.current.style.width = `${progress}%`;
-                }
-                if (progressTextRef.current) {
-                  progressTextRef.current.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} lines processed`;
-                }
-              }),
-            );
+        const result = await parserWorkerApi.parseFileBlob(
+          file,
+          proxy((current: number, total: number) => {
+            if (progressPhaseRef.current !== "parse") return;
+            const progress = total > 0 ? (current / total) * 100 : 0;
+            if (progressBarRef.current) progressBarRef.current.style.width = `${progress}%`;
+            if (progressTextRef.current) {
+              progressTextRef.current.textContent = showByteProgress
+                ? `${formatBytes(current)} / ${formatBytes(total)} read`
+                : `${current.toLocaleString()} / ${total.toLocaleString()} processed`;
+            }
+          }),
+        );
 
         setParseResult(result);
         setDetectedFormat(result.detectedFormat || null);
         setIsParsing(false);
 
+        if (result.report && result.genotypes.length === 0) {
+          setResultView("report");
+          setMatches([]);
+          setGenosets([]);
+          progressPhaseRef.current = null;
+          processingRef.current = false;
+          return;
+        }
+        setResultView("matches");
         if (result.genotypes.length === 0) {
           setMatchError(
             new Error(
-              result.detectedFormat === "vcf"
-                ? "No supported SNP genotype records were found in this VCF/gVCF. Records need an rsID, or an explicit GRCh37/GRCh38 reference build and valid SNP coordinates. Reference blocks and indels are skipped."
-                : "No valid SNP data found in file",
+              result.errors[0] ||
+                (result.detectedFormat === "vcf"
+                  ? "No supported genotype calls were found in this VCF/gVCF. Calls need an rsID, or an explicit GRCh37/GRCh38 build and valid coordinates. Reference blocks and symbolic alleles do not specify a concrete called sequence."
+                  : "No valid genotype data found in file"),
             ),
           );
           progressPhaseRef.current = null;
@@ -202,7 +198,7 @@ function App() {
               progressBarRef.current.style.width = `${progress}%`;
             }
             if (progressTextRef.current) {
-              progressTextRef.current.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} SNPs processed`;
+              progressTextRef.current.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} variants processed`;
             }
           }),
         );
@@ -282,6 +278,7 @@ function App() {
     setFileName(null);
     setParseResult(null);
     setDetectedFormat(null);
+    setResultView("matches");
     setMatches(null);
     setGenosets(null);
     setMatchError(null);
@@ -290,7 +287,9 @@ function App() {
 
   // Determine app state
   const hasResults = matches !== null && genosets !== null;
-  const error = dbError || workerError || parserWorkerError || (mode === "upload" ? matchError : null);
+  const uploadError = mode === "upload" ? matchError : null;
+  const error = workerError || parserWorkerError || uploadError || dbError;
+  const isFileError = Boolean(uploadError && error === uploadError && error !== dbError);
   const hasError = Boolean(error);
   const isDatabaseReady = Boolean(dbStats) && !isDbLoading && !dbError;
   const isProcessing = isParsing || isMatching || isMatchingGenosets;
@@ -302,7 +301,6 @@ function App() {
     isWorkerReady &&
     !isProcessing &&
     !references.busy &&
-    !dbError &&
     !workerError &&
     !parserWorkerError;
   const isLandingView = mode === "upload" && !hasResults && !isProcessing;
@@ -321,7 +319,7 @@ function App() {
         : "Finding your reference matches"
       : "Checking related genosets";
   const processingDetail = isParsing
-    ? "Detecting the format and reading your genotype records."
+    ? "Detecting the format and reading your data locally."
     : isMatching
       ? `${parseResult?.genotypes.length.toLocaleString() ?? "0"} variants read. ${isWaitingForDatabase ? "Matching will start automatically." : "Comparing your genotypes with reference annotations."}`
       : `Looking for combinations across ${matches?.length.toLocaleString() ?? "0"} matching records.`;
@@ -395,16 +393,14 @@ function App() {
           >
             <div>
               <h2 className="text-sm font-semibold text-red-950">
-                {dbError || workerError || parserWorkerError
-                  ? "The workspace could not finish loading"
-                  : "We couldn't read this file"}
+                {isFileError ? "We couldn't read this file" : "The workspace could not finish loading"}
               </h2>
               <p className="mt-1 text-sm leading-6 text-red-800">{error?.message || "An unknown error occurred"}</p>
-              {!dbError && !workerError && !parserWorkerError && (
-                <p className="mt-1 text-sm text-red-700">Try another supported DNA export below.</p>
+              {isFileError && (
+                <p className="mt-1 text-sm text-red-700">Try another supported DNA export or report below.</p>
               )}
             </div>
-            {(dbError || workerError || parserWorkerError) && (
+            {!isFileError && (
               <button type="button" className="secondary-button shrink-0" onClick={() => window.location.reload()}>
                 Reload workspace
               </button>
@@ -471,7 +467,7 @@ function App() {
               <div className="my-8 h-px w-14 bg-brand-500" />
               <ol className="space-y-5">
                 {[
-                  ["01", "Bring your DNA export", "Common provider files, VCF and ZIP archives."],
+                  ["01", "Bring your DNA export", "Provider exports, VCF, Promethease and PDF reports."],
                   ["02", "Find your matches", "Your genotypes, connected to reference annotations."],
                   ["03", "Explore at your pace", "Search, filter, read the source, and export results."],
                 ].map(([step, title, detail]) => (
@@ -579,8 +575,9 @@ function App() {
                 </h1>
                 {parseResult && (
                   <p className="mt-2 text-xs text-slate-500">
-                    {parseResult.genotypes.length.toLocaleString()}{" "}
-                    {parseResult.genotypes.length === 1 ? "variant" : "variants"} read
+                    {parseResult.report?.format === "pdf"
+                      ? `${parseResult.report.pages.length.toLocaleString()} report pages read`
+                      : `${parseResult.genotypes.length.toLocaleString()} ${parseResult.genotypes.length === 1 ? "variant" : "variants"} read`}
                     {detectedFormat && (
                       <>
                         {" "}
@@ -597,7 +594,35 @@ function App() {
                 Analyze another file
               </button>
             </div>
-            {analyzedReferenceRevision !== references.revision && (
+            {parseResult?.warnings?.length ? (
+              <details className="mb-5 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                <summary className="cursor-pointer font-medium">Import notes ({parseResult.warnings.length})</summary>
+                <ul className="mt-3 list-disc space-y-2 pl-5 text-xs leading-6">
+                  {parseResult.warnings.map((warning, index) => (
+                    <li key={index}>{warning}</li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+            {parseResult && parseResult.genotypes.length > 0 && (
+              <nav aria-label="Analysis results" className="mb-5 flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
+                {(["matches", "calls", ...(parseResult.report ? ["report" as const] : [])] as const).map((view) => (
+                  <button
+                    key={view}
+                    type="button"
+                    onClick={() => setResultView(view)}
+                    aria-current={resultView === view ? "page" : undefined}
+                    className={twMerge(
+                      "cursor-pointer rounded-md px-4 py-2 text-sm font-medium",
+                      resultView === view ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-900",
+                    )}
+                  >
+                    {view === "matches" ? "Reference matches" : view === "calls" ? "Imported calls" : "Source report"}
+                  </button>
+                ))}
+              </nav>
+            )}
+            {parseResult && parseResult.genotypes.length > 0 && analyzedReferenceRevision !== references.revision && (
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-brand-200 bg-brand-50 px-4 py-3">
                 <p className="text-sm text-brand-800">
                   Your enabled reference datasets have changed. Update this analysis to include them.
@@ -612,12 +637,16 @@ function App() {
                 </button>
               </div>
             )}
-            <ResultsDisplay
-              matches={matches}
-              genosets={genosets}
-              workerApi={workerApi!}
-              referenceRevision={references.revision}
-            />
+            {resultView === "report" && parseResult?.report && <ImportedReportView report={parseResult.report} />}
+            {resultView === "calls" && parseResult && <ImportedCallsView calls={parseResult.genotypes} />}
+            {resultView === "matches" && (
+              <ResultsDisplay
+                matches={matches}
+                genosets={genosets}
+                workerApi={workerApi!}
+                referenceRevision={references.revision}
+              />
+            )}
           </>
         )}
 

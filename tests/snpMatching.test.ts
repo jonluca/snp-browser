@@ -65,6 +65,47 @@ test("missing database genotypes do not act as wildcards", async () => {
   expect(await matchSNPsInBatches(database, columns, [userGenotype("ag")], () => {})).toEqual([]);
 });
 
+test("sequence alleles cannot collapse into a compact SNPedia genotype", async () => {
+  const database = fixture("rs123", "A;T", "{{Rsnum|Orientation=plus}}");
+  const calls: UserGenotype[] = [
+    { ...userGenotype("at"), ref: "A", alt: "AT", alleles: ["AT"] },
+    { ...userGenotype("a/t"), ref: "AT", alt: "A,T", alleles: ["A", "T"] },
+    { ...userGenotype("at"), ref: "AT" },
+    { ...userGenotype("a/t") },
+  ];
+  const context = await matchSNPsInBatches(database, columns, calls, () => {});
+  expect(context).toHaveLength(4);
+  expect(context.every((match) => !match.genotypeData)).toBe(true);
+  expect(await matchSNPsInBatches(database, columns, [userGenotype("at")], () => {})).toHaveLength(1);
+});
+
+test("explicitly unknown strand retains variant context without genotype-specific annotations", async () => {
+  const database = fixture("rs123", "A;G", "{{Rsnum|Orientation=plus|summary=Variant context}}");
+  const call: UserGenotype = { ...userGenotype("ag"), strand: "unknown" };
+  const matches = await matchSNPsInBatches(database, columns, separatedCalls(call, { ...call }, true), () => {});
+  expect(matches).toHaveLength(1);
+  expect(matches[0].genotypeData).toBeUndefined();
+  expect(matches[0].parsedData.summary).toBe("Variant context");
+  expect(matches[0].parsedData.genotypeContent).toBeUndefined();
+  database.run("DELETE FROM genotypes");
+  const withoutGenotypes = await matchSNPsInBatches(database, columns, [call], () => {});
+  expect(withoutGenotypes).toHaveLength(1);
+  expect(withoutGenotypes[0].genotypeData).toBeUndefined();
+});
+
+test("explicit minus-strand calls align with the declared source strand and stay contextual if it is unknown", async () => {
+  for (const [orientation, genotype] of [
+    ["minus", "C;T"],
+    ["plus", "A;G"],
+    ["unknown", "C;T"],
+  ]) {
+    const database = fixture("rs123", genotype, `{{Rsnum|Orientation=${orientation}}}`);
+    const matches = await matchSNPsInBatches(database, columns, [{ ...userGenotype("ct"), strand: "minus" }], () => {});
+    expect(matches).toHaveLength(1);
+    expect(Boolean(matches[0].genotypeData)).toBe(orientation !== "unknown");
+  }
+});
+
 test("database query failures reject instead of returning partial successful results", async () => {
   const database = fixture("rs123", "A;G", "{{Rsnum|Orientation=plus}}");
   database.run("ALTER TABLE genotypes DROP COLUMN content");
@@ -133,6 +174,13 @@ for (const acrossBatches of [false, true]) {
         "A;A",
         "{{Genotype|summary=Synthetic homozygous definition}}",
       ]);
+      if (field === "strand")
+        database.run("INSERT INTO genotypes VALUES (?, ?, ?, ?, NULL)", [
+          "synthetic-complement",
+          "rs123",
+          "C;T",
+          "{{Genotype|summary=Synthetic complemented definition}}",
+        ]);
       const first: UserGenotype = {
         ...userGenotype("ag"),
         assembly: "GRCh37",

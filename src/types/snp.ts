@@ -36,11 +36,13 @@ export interface GenosetRecord {
 
 // User's genotype from uploaded file
 export interface UserGenotype {
-  /** rsID/provider ID, or a stable build:chromosome:position:REF:ALT key for ID-less VCF SNPs. */
+  /** rsID/provider ID, or a stable build:chromosome:position:REF:ALT key for ID-less VCF variants. */
   rsid: string;
   chromosome: string;
   position: string;
   genotype: string;
+  /** Explicit called sequences for non-SNP VCF calls, preserving allele boundaries and source order. */
+  alleles?: string[];
   /** Only set when the uploaded file explicitly identifies a supported build. */
   assembly?: GenomeAssembly;
   /** Reference allele, in the same orientation as genotype. */
@@ -88,7 +90,16 @@ export interface MatchedGenoset {
   };
 }
 
+export interface ImportedReport {
+  format: "pdf" | "promethease";
+  title: string;
+  pages: Array<{ page: number; text: string }>;
+  notes: string[];
+}
+
 export interface ParseResult {
+  report?: ImportedReport;
+  warnings?: string[];
   assembly?: GenomeAssembly;
   genotypes: UserGenotype[];
   totalLines: number;

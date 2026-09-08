@@ -41,9 +41,19 @@ import parserMyHeritage from "./myheritage";
 import parserFTDNA from "./ftdna";
 import parserVitagene from "./vitagene";
 import parserVCF from "./vcf";
+import parserPromethease from "./promethease";
 
 // Re-export parsers
-export { parser23andMe, parserAncestry, parserColor, parserMyHeritage, parserFTDNA, parserVitagene, parserVCF };
+export {
+  parser23andMe,
+  parserAncestry,
+  parserColor,
+  parserMyHeritage,
+  parserFTDNA,
+  parserVitagene,
+  parserVCF,
+  parserPromethease,
+};
 
 // Auto-register all parsers
 import { parserRegistry } from "./registry";
@@ -56,6 +66,7 @@ parserRegistry.register(parserMyHeritage);
 parserRegistry.register(parserFTDNA);
 parserRegistry.register(parserVitagene);
 parserRegistry.register(parserVCF);
+parserRegistry.register(parserPromethease);
 
 /**
  * Get a list of all registered parsers

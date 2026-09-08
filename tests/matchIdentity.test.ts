@@ -54,6 +54,7 @@ test("row and annotation-query identities retain every declared call dimension",
     { strand: undefined },
     { phased: true },
     { phased: undefined },
+    { alleles: ["A", "G"] },
   ];
 
   for (const change of changes) {

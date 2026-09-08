@@ -67,7 +67,7 @@ test("VCF parser metadata advertises gVCF extensions", () => {
   expect(parserVCF.metadata.fileExtensions).toContain(".gz");
 });
 
-test("VCF parser accepts gVCF records and skips indels", async () => {
+test("VCF parser accepts gVCF records and preserves concrete indels", async () => {
   const validation = parserVCF.validate(gvcfContent);
   expect(validation.valid).toBe(true);
 
@@ -86,6 +86,17 @@ test("VCF parser accepts gVCF records and skips indels", async () => {
       phased: false,
     },
     {
+      rsid: "rs789",
+      chromosome: "1",
+      position: "260",
+      genotype: "a/ac",
+      ref: "A",
+      alt: "AC",
+      strand: "plus",
+      phased: false,
+      alleles: ["A", "AC"],
+    },
+    {
       rsid: "rs456",
       chromosome: "MT",
       position: "270",
@@ -100,17 +111,17 @@ test("VCF parser accepts gVCF records and skips indels", async () => {
 test("VCF parser streams VCF blobs", async () => {
   const result = await parserVCF.parseBlob(new Blob([gvcfContent], { type: "text/plain" }), () => undefined);
 
-  expect(result.genotypes.map((genotype) => genotype.rsid)).toEqual(["rs123", "rs456"]);
+  expect(result.genotypes.map((genotype) => genotype.rsid)).toEqual(["rs123", "rs789", "rs456"]);
   expect(result.totalLines).toBe(7);
 });
 
 test("VCF parser streams provider-style gzip VCF blobs", async () => {
-  const file = new File([gzipSync(gvcfContent)], "JonLuca_DeCaro_nucleus_dna_download_vcf_NU-NQAF-0943.gz");
+  const file = new File([gzipSync(gvcfContent)], "synthetic-provider-vcf.gz");
 
   const result = await parserVCF.parseBlob(file, () => undefined);
 
   expect(result.errors).toEqual([]);
-  expect(result.genotypes.map((genotype) => genotype.rsid)).toEqual(["rs123", "rs456"]);
+  expect(result.genotypes.map((genotype) => genotype.rsid)).toEqual(["rs123", "rs789", "rs456"]);
 });
 
 test("VCF parser streams blocked gzip VCF blobs without relying on browser gzip member handling", async () => {
@@ -121,7 +132,7 @@ test("VCF parser streams blocked gzip VCF blobs without relying on browser gzip 
     createBgzfBlock(gvcfContent.slice(breakAt)),
     createBgzfBlock(""),
   ]);
-  const file = new File([bgzfContent], "JonLuca_DeCaro_nucleus_dna_download_vcf_NU-NQAF-0943.gz");
+  const file = new File([bgzfContent], "synthetic-provider-vcf.gz");
 
   class RejectingGzipDecompressionStream extends originalDecompressionStream {
     constructor(format: CompressionFormat) {
@@ -138,7 +149,7 @@ test("VCF parser streams blocked gzip VCF blobs without relying on browser gzip 
     const result = await parserVCF.parseBlob(file, () => undefined);
 
     expect(result.errors).toEqual([]);
-    expect(result.genotypes.map((genotype) => genotype.rsid)).toEqual(["rs123", "rs456"]);
+    expect(result.genotypes.map((genotype) => genotype.rsid)).toEqual(["rs123", "rs789", "rs456"]);
   } finally {
     globalThis.DecompressionStream = originalDecompressionStream;
   }
@@ -311,6 +322,18 @@ test("VCF text and streaming parsing preserve reference build and called multial
         assembly: "GRCh38",
       },
       { rsid: "rs126", chromosome: "1", position: "103", genotype: "--", ref: "A", strand: "plus", assembly: "GRCh38" },
+      {
+        rsid: "rs127",
+        chromosome: "1",
+        position: "104",
+        genotype: "g/g",
+        ref: "AC",
+        alt: "G",
+        strand: "plus",
+        assembly: "GRCh38",
+        phased: false,
+        alleles: ["G", "G"],
+      },
     ]);
   }
 });
@@ -351,7 +374,7 @@ test("VCF text, streaming, and gzip parsing retain ID-less SNPs under stable dec
     "22\t205\tcustom-name\tA\tG\t.\tPASS\t.\tGT\t0/1",
   ].join("\n");
   expect(parserVCF.validate(content).valid).toBe(true);
-  expect(parserVCF.validate(content).reason).toContain("4 genotype records");
+  expect(parserVCF.validate(content).reason).toContain("8 genotype records");
   for (const result of [
     await parserVCF.parse(content, () => undefined),
     await parserVCF.parseBlob(new Blob([content]), () => undefined),
@@ -364,6 +387,10 @@ test("VCF text, streaming, and gzip parsing retain ID-less SNPs under stable dec
       "GRCh38:22:101:A:C,G",
       "GRCh38:MT:102:C:T",
       "GRCh38:22:103:A:G",
+      "GRCh38:22:201:A:AC",
+      "GRCh38:22:202:AC:G",
+      "GRCh38:GL000207.1:203:A:G",
+      "GRCh38:22:205:A:G",
     ]);
     expect(result.genotypes[0]).toMatchObject({
       genotype: "ag",
@@ -403,4 +430,110 @@ test("VCF coordinate identities require one supported build and accept explicit 
       expect(result.skippedLines).toBe(result.totalLines);
     }
   }
+});
+
+test("sequence calls preserve allele boundaries, ploidy, phasing, and VCF padding", async () => {
+  const content = [
+    "##fileformat=VCFv4.5",
+    "##reference=GRCh38.fa",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+    "1\t100\t.\tA\tAT\t.\tPASS\t.\tGT\t0/1",
+    "1\t101\t.\tAT\tA\t.\tPASS\t.\tGT\t1|0",
+    "1\t102\t.\tAC\tGT,AG\t.\tPASS\t.\tGT\t2/1",
+    "1\t103\t.\tA\tAT\t.\tPASS\t.\tGT\t1",
+    "1\t104\t.\tAT\tA\t.\tPASS\t.\tGT\t0/0",
+    "1\t105\t.\tA\tAT\t.\tPASS\t.\tGT\t0/1|1",
+    "1\t106\t.\tA\tAT\t.\tPASS\t.\tGT\t/1/0",
+    "1\t107\t.\tA\tAT\t.\tPASS\t.\tGT\t./1",
+    "1\t108\t.\tA\tG\t.\tPASS\t.\tGT\t0/1/1",
+  ].join("\n");
+  for (const result of [
+    await parserVCF.parse(content, () => undefined),
+    await parserVCF.parseBlob(new File([gzipSync(content)], "synthetic-sequences.vcf.gz"), () => undefined),
+  ]) {
+    expect(result.errors).toEqual([]);
+    expect(result.genotypes.map((call) => call.genotype)).toEqual([
+      "a/at",
+      "a|at",
+      "ag/gt",
+      "at",
+      "at/at",
+      "a/at|at",
+      "/at/a",
+      "--",
+      "a/g/g",
+    ]);
+    expect(result.genotypes.map((call) => call.alleles)).toEqual([
+      ["A", "AT"],
+      ["A", "AT"],
+      ["AG", "GT"],
+      ["AT"],
+      ["AT", "AT"],
+      ["A", "AT", "AT"],
+      ["AT", "A"],
+      undefined,
+      ["A", "G", "G"],
+    ]);
+    expect(result.genotypes[0].rsid).toBe("GRCh38:1:100:A:AT");
+    expect(result.genotypes[1].phased).toBe(true);
+    expect(result.genotypes[2].alt).toBe("AG,GT");
+    expect(result.genotypes[4].alt).toBeUndefined();
+    expect(result.genotypes[5].phased).toBe(false);
+  }
+});
+
+test("symbolic calls, ambiguous bases, reference blocks, and missing GT produce aggregate notices", async () => {
+  const content = [
+    "##fileformat=VCFv4.5",
+    "##reference=GRCh38.fa",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+    "1\t100\t.\tA\t<NON_REF>\t.\tPASS\tEND=200\tGT\t0/0",
+    "1\t201\trs100\tA\t<NON_REF>\t.\tPASS\tEND=300\tGT\t0/0",
+    "1\t301\trs101\tA\tAT,<DEL>\t.\tPASS\t.\tGT\t0/2",
+    "1\t302\trs102\tA\tAT,*\t.\tPASS\t.\tGT\t1/2",
+    "1\t303\trs103\tA\tA]2:100]\t.\tPASS\t.\tGT\t1/1",
+    "1\t304\trs104\tA\tAN\t.\tPASS\t.\tGT\t1/1",
+    "1\t305\trs105\tN\tG\t.\tPASS\t.\tGT\t0/1",
+    "1\t306\t.\tA\tAT\t.\tPASS\t.\tDP\t20",
+    "1\t307\t.\tA\tAT,<NON_REF>\t.\tPASS\t.\tGT\t0/1",
+  ].join("\n");
+  const result = await parserVCF.parse(content, () => undefined);
+  expect(result.genotypes).toHaveLength(1);
+  expect(result.genotypes[0].genotype).toBe("a/at");
+  expect(result.errors).toEqual([]);
+  expect(result.warnings).toHaveLength(4);
+  expect(result.warnings?.join(" ")).toContain("2 reference blocks");
+  expect(result.warnings?.join(" ")).toContain("4 calls used symbolic");
+});
+
+test("malformed or out-of-range GT indexes cannot become sequence calls", async () => {
+  const content = [
+    "##fileformat=VCFv4.5",
+    "##reference=GRCh38.fa",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+    ...["0//1", "0/2", "0/-1", "0/x", "0/", "0//."].map(
+      (gt, index) => `1\t${100 + index}\t.\tA\tAT\t.\tPASS\t.\tGT\t${gt}`,
+    ),
+  ].join("\n");
+  const result = await parserVCF.parse(content, () => undefined);
+  expect(result.genotypes).toEqual([]);
+  expect(result.errors).toHaveLength(6);
+});
+
+test("noncanonical contigs retain exact names and safe coordinate IDs without inventing canonical chromosomes", async () => {
+  const content = [
+    "##fileformat=VCFv4.5",
+    "##reference=GRCh38.fa",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+    "alternate*01:02\t100\t.\tA\tAT\t.\tPASS\t.\tGT\t0/1",
+    "chrUn_example\t101\tprovider-call\tAC\tA\t.\tPASS\t.\tGT\t1/1",
+    "<invalid>\t102\t.\tA\tG\t.\tPASS\t.\tGT\t0/1",
+  ].join("\n");
+  const result = await parserVCF.parse(content, () => undefined);
+  expect(result.errors).toEqual([]);
+  expect(result.genotypes.map(({ chromosome, rsid }) => ({ chromosome, rsid }))).toEqual([
+    { chromosome: "alternate*01:02", rsid: "GRCh38:alternate*01%3A02:100:A:AT" },
+    { chromosome: "chrUn_example", rsid: "GRCh38:chrUn_example:101:AC:A" },
+  ]);
+  expect(result.warnings).toHaveLength(1);
 });

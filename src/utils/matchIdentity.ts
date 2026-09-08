@@ -1,5 +1,12 @@
 import type { MatchedSNP, UserGenotype } from "../types/snp";
 
+/** Keep full sequence IDs in data/exports while headings show a readable locus. */
+export function variantLabel(user: UserGenotype): string {
+  return user.assembly && user.rsid.startsWith(`${user.assembly}:`)
+    ? `${user.assembly} ${user.chromosome}:${user.position}`
+    : user.rsid;
+}
+
 /** Keep every declared call dimension; an rsID alone cannot identify a result. */
 export function userCallIdentity(user: UserGenotype): string {
   return JSON.stringify([
@@ -12,6 +19,7 @@ export function userCallIdentity(user: UserGenotype): string {
     user.alt ?? null,
     user.strand ?? null,
     user.phased ?? null,
+    user.alleles ?? null,
   ]);
 }
 

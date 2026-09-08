@@ -129,6 +129,12 @@ export async function matchSNPsInBatches(
   for (let i = 0; i < genotypes.length; i += batchSize) {
     const batch = genotypes.slice(i, Math.min(i + batchSize, genotypes.length));
     const genotypesByRsid = new Map<string, UserGenotype[]>();
+    const contextUsers = new Set(
+      batch.filter(
+        (user) =>
+          user.strand === "unknown" || user.alleles || (user.ref?.length ?? 0) > 1 || /[/|]/.test(user.genotype),
+      ),
+    );
     for (const genotype of batch) {
       const rsid = genotype.rsid.toLowerCase();
       const candidates = genotypesByRsid.get(rsid) ?? [];
@@ -171,11 +177,22 @@ export async function matchSNPsInBatches(
 
         // Preserve distinct calls even when they occur in the same batch.
         for (const userGenotype of genotypesByRsid.get(snp_id.toLowerCase()) ?? []) {
-          // 23andMe genotypes are plus-strand. If SNPedia’s effective orientation is minus,
-          // flip the user genotype into minus to match SNPedia’s definitions.
+          // SNPedia's compact genotype labels do not establish VCF sequence
+          // allele boundaries or REF/ALT equivalence. These calls use the exact
+          // coordinate-aware reference matcher instead of flattened strings.
+          if (contextUsers.has(userGenotype)) continue;
+          if (userGenotype.strand === "minus" && effectiveOrientation === "unknown") {
+            contextUsers.add(userGenotype);
+            continue;
+          }
+          // Legacy calls without strand metadata retain the plus-strand default.
+          // Explicitly unknown strand never receives genotype-specific evidence.
           let normalizedUserGenotype = normalizeGenotype(userGenotype.genotype || "");
           if (!normalizedUserGenotype || normalizedUserGenotype === "--") continue;
-          if (effectiveOrientation === "minus") {
+          if (
+            (effectiveOrientation === "minus" && userGenotype.strand !== "minus") ||
+            (effectiveOrientation === "plus" && userGenotype.strand === "minus")
+          ) {
             normalizedUserGenotype = normalizeGenotype(complementGenotype(normalizedUserGenotype));
           }
 
@@ -241,6 +258,64 @@ export async function matchSNPsInBatches(
       }
     } finally {
       stmt.free();
+    }
+
+    // Keep the source's general variant article when strand or sequence identity
+    // prevents a genotype interpretation. Query snps directly so an article does
+    // not need a corresponding genotype row to remain available.
+    const contextIds = [...new Set([...contextUsers].map((user) => user.rsid.toLowerCase()))].filter((id) =>
+      /^(?:rs|i)\d+$/.test(id),
+    );
+    if (contextIds.length) {
+      const contextStatement = database.prepare(
+        `SELECT * FROM snps WHERE rsid COLLATE NOCASE IN (${contextIds.map(() => "?").join(",")})`,
+      );
+      try {
+        contextStatement.bind(contextIds);
+        while (contextStatement.step()) {
+          const row = contextStatement.getAsObject();
+          const rsid = row.rsid as string;
+          const content = (row.content as string) || "";
+          for (const user of genotypesByRsid.get(rsid.toLowerCase()) ?? []) {
+            if (!contextUsers.has(user)) continue;
+            const key = JSON.stringify([userCallIdentity(user), null]);
+            const previous = emitted.get(key);
+            if (
+              previous?.some(
+                (match) =>
+                  match.snpData.rsid === rsid &&
+                  match.snpData.content === content &&
+                  match.snpData.scraped_at === row.scraped_at &&
+                  match.snpData.gene === row.gene &&
+                  match.snpData.gene_s === row.gene_s &&
+                  match.snpData.clin_gene_name === row.clin_gene_name &&
+                  match.snpData.clin_sig === row.clin_sig &&
+                  match.snpData.clin_disease === row.clin_disease,
+              )
+            )
+              continue;
+            const match: MatchedSNP = {
+              ...user,
+              snpData: {
+                rsid,
+                content,
+                scraped_at: row.scraped_at as string | undefined,
+                gene: row.gene as string | undefined,
+                gene_s: row.gene_s as string | undefined,
+                clin_gene_name: row.clin_gene_name as string | undefined,
+                clin_sig: row.clin_sig as string | undefined,
+                clin_disease: row.clin_disease as string | undefined,
+              },
+              parsedData: parseContentData(rsid, content, undefined, row),
+            };
+            matches.push(match);
+            if (previous) previous.push(match);
+            else emitted.set(key, [match]);
+          }
+        }
+      } finally {
+        contextStatement.free();
+      }
     }
 
     if (i % 1000 === 0 || i + batchSize >= genotypes.length) {
