@@ -11,6 +11,7 @@ import { useQuery } from "@tanstack/react-query";
 import type { Remote } from "comlink";
 import type { SNPMatcherWorkerApi } from "../workers/snpMatcher.worker";
 import { ANNOTATION_SOURCE_NAMES } from "../utils/annotationPresentation";
+import { countMatchVariants, createMatchRows, userCallIdentity } from "../utils/matchIdentity";
 
 type ViewMode = "snps" | "genosets";
 type SortMode = "magnitude" | "rsid";
@@ -73,12 +74,14 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
   const searchRef = useRef<HTMLInputElement>(null);
   const detailRef = useRef<HTMLHeadingElement>(null);
   const detailPaneRef = useRef<HTMLDivElement>(null);
-  const annotatedCount = useMemo(() => matches.filter(hasAlleleAnnotation).length, [matches]);
+  const matchRows = useMemo(() => createMatchRows(matches), [matches]);
+  const variantCount = useMemo(() => countMatchVariants(matches), [matches]);
+  const annotatedCount = useMemo(() => countMatchVariants(matches, hasAlleleAnnotation), [matches]);
 
-  const filteredMatches = useMemo(() => {
+  const filteredRows = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
-    return matches
-      .filter((match) => {
+    return matchRows
+      .filter(({ match }) => {
         if (onlyWithGenotype && !hasAlleleAnnotation(match)) return false;
         return (
           !term ||
@@ -93,21 +96,18 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
           ].some((value) => value?.toLowerCase().includes(term))
         );
       })
-      .sort((a, b) => {
+      .sort(({ match: a }, { match: b }) => {
         const byId = rsidCollator.compare(a.rsid, b.rsid);
         return sortMode === "rsid" ? byId : (b.parsedData.magnitude ?? -1) - (a.parsedData.magnitude ?? -1) || byId;
       });
-  }, [matches, searchTerm, onlyWithGenotype, sortMode]);
+  }, [matchRows, searchTerm, onlyWithGenotype, sortMode]);
 
-  const selectedSNP = filteredMatches.find((match) => match.rsid === selectedId);
+  const selectedSNP = filteredRows.find((row) => row.key === selectedId)?.match;
   const selectedPresentation = selectedSNP ? presentMatch(selectedSNP) : undefined;
   const annotationDetails = useQuery({
     queryKey: [
       "matched-annotations",
-      selectedSNP?.rsid,
-      selectedSNP?.genotype,
-      selectedSNP?.assembly,
-      selectedSNP?.position,
+      selectedSNP ? userCallIdentity(selectedSNP) : null,
       referenceRevision,
       selectedSNP?.annotationSummary?.ambiguous,
     ],
@@ -134,17 +134,17 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
   };
 
   const itemContent = (index: number) => {
-    const match = filteredMatches[index];
+    const { match, key } = filteredRows[index];
     const presentation = presentMatch(match);
-    const isSelected = selectedSNP?.rsid === match.rsid;
+    const isSelected = selectedId === key;
 
     return (
       <button
         type="button"
         aria-pressed={isSelected}
-        aria-label={`View ${match.rsid.toUpperCase()}, genotype ${match.genotype.toUpperCase()}`}
+        aria-label={`View ${match.rsid.toUpperCase()}, genotype ${match.genotype.toUpperCase()}${match.genotypeData ? `, SNPedia record ${match.genotypeData.id}` : ""}`}
         className="variant-row"
-        onClick={() => setSelectedId(match.rsid)}
+        onClick={() => setSelectedId(key)}
       >
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-baseline gap-2">
@@ -196,7 +196,7 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
               viewMode === "snps" ? "bg-slate-900 text-white" : "text-slate-600 hover:bg-slate-50",
             )}
           >
-            Variants <span className="ml-1 text-xs opacity-65">{matches.length.toLocaleString()}</span>
+            Variants <span className="ml-1 text-xs opacity-65">{variantCount.toLocaleString()}</span>
           </button>
           <button
             type="button"
@@ -220,15 +220,23 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
                 <p className="section-label mb-2">Your DNA, in context</p>
                 <h2 className="text-2xl font-semibold tracking-tight text-slate-950">Your variant matches</h2>
                 <p className="mt-2 text-sm leading-relaxed text-slate-500">
-                  <span className="font-medium text-slate-700">{matches.length.toLocaleString()}</span>{" "}
-                  {matches.length === 1 ? "variant" : "variants"} in your enabled references ·{" "}
+                  <span className="font-medium text-slate-700">{variantCount.toLocaleString()}</span>{" "}
+                  {variantCount === 1 ? "variant" : "variants"} in your enabled references ·{" "}
                   {annotatedCount.toLocaleString()} with an allele or genotype annotation
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => downloadCsvFile("snp-matches.csv", buildCsv(filteredMatches, SNP_EXPORT_COLUMNS))}
-                disabled={filteredMatches.length === 0}
+                onClick={() =>
+                  downloadCsvFile(
+                    "snp-matches.csv",
+                    buildCsv(
+                      filteredRows.map(({ match }) => match),
+                      SNP_EXPORT_COLUMNS,
+                    ),
+                  )
+                }
+                disabled={filteredRows.length === 0}
                 className="secondary-button"
               >
                 Export CSV{" "}
@@ -288,7 +296,7 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
                   With allele or genotype annotations
                 </label>
                 <span aria-live="polite" className="text-xs tabular-nums text-slate-500">
-                  {filteredMatches.length.toLocaleString()} {filteredMatches.length === 1 ? "result" : "results"}
+                  {filteredRows.length.toLocaleString()} {filteredRows.length === 1 ? "record" : "records"}
                 </span>
               </div>
             </div>
@@ -296,11 +304,11 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
 
           <div className="workspace-split">
             <div className={twMerge("workspace-list flex flex-col overflow-hidden", selectedSNP && "hidden lg:flex")}>
-              {filteredMatches.length > 0 ? (
+              {filteredRows.length > 0 ? (
                 <Virtuoso
                   style={{ height: "100%" }}
-                  totalCount={filteredMatches.length}
-                  computeItemKey={(index) => filteredMatches[index].rsid}
+                  totalCount={filteredRows.length}
+                  computeItemKey={(index) => filteredRows[index].key}
                   itemContent={itemContent}
                 />
               ) : (
@@ -415,6 +423,7 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
                   {selectedSNP.genotypeData?.content ? (
                     <section className="border-t border-slate-200 pt-5">
                       <h4 className="mb-4 text-sm font-semibold text-slate-900">About your genotype</h4>
+                      <p className="mb-4 text-xs text-slate-500">SNPedia record: {selectedSNP.genotypeData.id}</p>
                       <WikiContent content={selectedSNP.genotypeData.content} hideSummary />
                     </section>
                   ) : !selectedSNP.snpData.referenceSource ? (

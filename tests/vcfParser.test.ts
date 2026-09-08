@@ -144,6 +144,68 @@ test("VCF parser streams blocked gzip VCF blobs without relying on browser gzip 
   }
 });
 
+test("compressed VCF progress counts consumed file bytes before gzip or BGZF expansion", async () => {
+  const firstText = [
+    "##fileformat=VCFv4.2",
+    "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+    `#${"synthetic padding ".repeat(2000)}`,
+    "1\t100\trs123\tA\tG\t.\tPASS\t.\tGT\t0/1",
+    "",
+  ].join("\n");
+  const lastText = `#${"more synthetic padding ".repeat(2000)}\n1\t200\trs456\tC\tT\t.\tPASS\t.\tGT\t1/1\n`;
+  const gzip = gzipSync(firstText + lastText);
+  const firstBlock = createBgzfBlock(firstText);
+  const bgzf = concatBytes([firstBlock, createBgzfBlock(lastText), createBgzfBlock("")]);
+
+  for (const [format, compressed, prefixBytes] of [
+    ["gzip", gzip, Math.floor(gzip.byteLength / 2)],
+    ["bgzf", bgzf, firstBlock.byteLength],
+  ] as const) {
+    let releaseTail!: () => void;
+    const tailReady = new Promise<void>((resolve) => {
+      releaseTail = resolve;
+    });
+    const file = new File([compressed], `synthetic-progress.${format}.vcf.gz`);
+    // Hold the remaining compressed bytes until parsing makes progress. This
+    // distinguishes bytes actually consumed from much larger inflated chunks.
+    Object.defineProperty(file, "stream", {
+      value: () => {
+        let first = true;
+        return new ReadableStream<Uint8Array>(
+          {
+            async pull(controller) {
+              if (first) {
+                first = false;
+                controller.enqueue(compressed.subarray(0, prefixBytes));
+                return;
+              }
+              await tailReady;
+              controller.enqueue(compressed.subarray(prefixBytes));
+              controller.close();
+            },
+          },
+          { highWaterMark: 0 },
+        );
+      },
+    });
+    const progress: number[] = [];
+    const result = await parserVCF.parseBlob(file, (current, total) => {
+      expect(total).toBe(compressed.byteLength);
+      progress.push(current);
+      if (current > 0) releaseTail();
+    });
+
+    expect(progress[0]).toBe(0);
+    expect(progress.find((current) => current > 0)).toBe(prefixBytes);
+    expect(progress.at(-1)).toBe(compressed.byteLength);
+    expect(
+      progress.every((current, index) => current <= compressed.byteLength && current >= (progress[index - 1] ?? 0)),
+    ).toBe(true);
+    expect(result.errors).toEqual([]);
+    expect(result.genotypes.map((genotype) => genotype.rsid)).toEqual(["rs123", "rs456"]);
+  }
+});
+
 test("VCF parser skips coordinate-only records with no declared build without treating them as parse failures", async () => {
   const content = `##fileformat=VCFv4.2
 ##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">

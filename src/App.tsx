@@ -324,7 +324,7 @@ function App() {
     ? "Detecting the format and reading your genotype records."
     : isMatching
       ? `${parseResult?.genotypes.length.toLocaleString() ?? "0"} variants read. ${isWaitingForDatabase ? "Matching will start automatically." : "Comparing your genotypes with reference annotations."}`
-      : `Looking for combinations across ${matches?.length.toLocaleString() ?? "0"} matched variants.`;
+      : `Looking for combinations across ${matches?.length.toLocaleString() ?? "0"} matching records.`;
 
   return (
     <div className="min-h-screen">

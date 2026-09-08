@@ -11,6 +11,15 @@ const METADATA: ParserMetadata = {
   providerUrl: "https://www.ancestry.com",
 };
 
+function normalizeAncestryChromosome(chromosome: string): string {
+  // Ancestry documents 23=X and 24=Y in its raw-data format. Other numeric
+  // codes remain unchanged until their provider-specific meaning is confirmed.
+  // https://support.ancestry.com/s/article/Downloading-DNA-Data
+  if (chromosome.trim() === "23") return "X";
+  if (chromosome.trim() === "24") return "Y";
+  return chromosome;
+}
+
 /**
  * Parser for AncestryDNA data files
  *
@@ -73,7 +82,7 @@ export class ParserAncestry implements DNAParser {
         const [rsid, chromosome, position, allele1, allele2] = parts;
         if (
           /^(rs|i)\d+/i.test(rsid) &&
-          /^(1?\d|2[0-2]|X|Y|MT)$/i.test(chromosome) &&
+          /^(1?\d|2[0-2]|X|Y|MT)$/i.test(normalizeAncestryChromosome(chromosome)) &&
           /^\d+$/.test(position) &&
           /^[ACGTDI0-]$/i.test(allele1) && // D=deletion, I=insertion, 0=no call
           /^[ACGTDI0-]$/i.test(allele2)
@@ -165,7 +174,7 @@ export class ParserAncestry implements DNAParser {
 
       genotypes.push({
         rsid: rsid.toLowerCase(),
-        chromosome,
+        chromosome: normalizeAncestryChromosome(chromosome),
         position,
         genotype,
       });

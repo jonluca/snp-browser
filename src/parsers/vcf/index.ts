@@ -138,19 +138,19 @@ export class ParserVCF implements DNAParser {
   async parseBlob(file: Blob & { name?: string }, onProgress: ProgressCallback): Promise<ParseResult> {
     const state = this.createParseState(0);
     const totalBytes = file.size;
-    const stream = await this.openTextStream(file);
+    let bytesRead = 0;
+    onProgress(0, totalBytes);
+    const stream = await this.openTextStream(file, (chunkBytes) => {
+      bytesRead += chunkBytes;
+    });
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let bufferedText = "";
-    let bytesRead = 0;
-
-    onProgress(0, totalBytes);
 
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
 
-      bytesRead += value.byteLength;
       const text = decoder.decode(value, { stream: true });
       const lines = (bufferedText + text).split(/\r?\n/);
       bufferedText = lines.pop() ?? "";
@@ -198,8 +198,19 @@ export class ParserVCF implements DNAParser {
     );
   }
 
-  private async openTextStream(file: Blob & { name?: string }): Promise<ReadableStream<Uint8Array>> {
-    const stream = file.stream();
+  private async openTextStream(
+    file: Blob & { name?: string },
+    onInputChunk: (bytes: number) => void,
+  ): Promise<ReadableStream<Uint8Array>> {
+    // File.size measures compressed bytes; count input before either decoder expands it.
+    const stream = file.stream().pipeThrough(
+      new TransformStream<Uint8Array<ArrayBuffer>, Uint8Array<ArrayBuffer>>({
+        transform(chunk, controller) {
+          onInputChunk(chunk.byteLength);
+          controller.enqueue(chunk);
+        },
+      }),
+    );
     if (!file.name?.toLowerCase().endsWith(".gz")) {
       return stream;
     }
@@ -211,7 +222,7 @@ export class ParserVCF implements DNAParser {
     }
 
     if (await this.isBgzf(file)) {
-      return this.openBgzfTextStream(file);
+      return this.openBgzfTextStream(stream);
     }
 
     return stream.pipeThrough(new DecompressionStream("gzip"));
@@ -223,8 +234,8 @@ export class ParserVCF implements DNAParser {
     return header !== null && header !== "need-more";
   }
 
-  private openBgzfTextStream(file: Blob): ReadableStream<Uint8Array> {
-    const blocks = this.streamBgzfBlocks(file.stream());
+  private openBgzfTextStream(source: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
+    const blocks = this.streamBgzfBlocks(source);
     const iterator = blocks[Symbol.asyncIterator]();
 
     return new ReadableStream<Uint8Array>({

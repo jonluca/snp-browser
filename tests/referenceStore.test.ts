@@ -434,6 +434,82 @@ test("equivalent allele order, chromosome notation, and explicit opposite strand
   expect(result.evidence.get(user.rsid)?.[0].matchType).toBe("allele");
 });
 
+test("sparse duplicate groups preserve global alias and locus conflicts and full evidence", async () => {
+  const dbsnp = await pack(
+    "dbsnp",
+    [[annotation("db", "rs123", { source: "dbsnp", scope: "variant" })]],
+    [["rs99", "rs123"]],
+  );
+  const rows = [
+    annotation("alias-evidence", "rs123", {
+      fields: { clinicalSignificance: "Uncertain significance", detail: "retained" },
+    }),
+    annotation("locus-evidence", "", { rsid: undefined, position: 300 }),
+    annotation("equivalent-evidence", "rs900", { position: 400 }),
+    annotation("singleton-evidence", "rs901", { position: 500 }),
+  ];
+  const clinvar = await pack("clinvar", [rows.slice(0, 2), rows.slice(2)]);
+  addRouting(clinvar, [rows.slice(0, 2), rows.slice(2)]);
+  serveCatalog([clinvar, dbsnp]);
+  const references = store();
+  await references.initialize(catalogUrl);
+  for (const source of [clinvar, dbsnp]) await references.download(source.id, () => undefined);
+  const calls = [
+    { ...user, rsid: "rs99", ref: "A" },
+    { ...user, rsid: "rs800", position: "300" },
+    { ...user, rsid: "rs900", position: "400" },
+    { ...user, rsid: "rs901", position: "500" },
+    ...Array.from({ length: 2048 }, (_, index) => ({
+      ...user,
+      rsid: `rs${200000 + index}`,
+      position: String(10000 + index),
+    })),
+    // The canonical ID conflicts across loci; a different ID conflicts at a
+    // shared locus. Neither conflict can be resolved from a local input batch.
+    { ...user, rsid: "rs123", position: "200", ref: "A" },
+    { ...user, rsid: "rs801", position: "300", genotype: "AA" },
+    { ...user, rsid: "rs900", position: "0400", chromosome: "chr01", genotype: "ga" },
+  ];
+  requests = [];
+  for (const input of [calls, [...calls].reverse()]) {
+    const full = await references.match(input, () => undefined);
+    for (const rsid of ["rs99", "rs123", "rs800", "rs801"]) {
+      expect(full.summaries.get(rsid)).toMatchObject({ ambiguous: true, alleleCount: 0 });
+      expect(full.evidence.get(rsid)?.every((row) => row.matchType === "unresolved")).toBe(true);
+    }
+    for (const rsid of ["rs900", "rs901"])
+      expect(full.summaries.get(rsid)).toMatchObject({ ambiguous: false, count: 1, alleleCount: 1 });
+    expect(full.summaries.size).toBe(6);
+    expect(full.evidence.get("rs99")?.find((row) => row.id === "alias-evidence")?.fields).toMatchObject(rows[0].fields);
+    const summarized = await references.match(input, () => undefined, true);
+    expect(summarized.summaries).toEqual(full.summaries);
+    expect(summarized.evidence.size).toBe(0);
+  }
+  expect(requests).toEqual([]);
+});
+
+test("coordinate IDs retain global ID conflicts even when their input loci disagree", async () => {
+  const row = annotation("coordinate-evidence", "", { rsid: undefined, source: "gnomad" });
+  const source = await pack("gnomad", [[row]]);
+  addRouting(source, [[row]]);
+  serveCatalog([source]);
+  const references = store();
+  await references.initialize(catalogUrl);
+  await references.download(source.id, () => undefined);
+  const calls = [
+    { ...user, rsid: "GRCh38:1:100:A:G" },
+    { ...user, rsid: "GRCh38:1:100:A:G", position: "200" },
+  ];
+  const result = await references.match(calls, () => undefined);
+  expect(result.summaries.get(calls[0].rsid.toLowerCase())).toMatchObject({
+    ambiguous: true,
+    count: 1,
+    alleleCount: 0,
+    unresolvedCount: 1,
+  });
+  expect(result.evidence.get(calls[0].rsid.toLowerCase())?.[0].matchType).toBe("unresolved");
+});
+
 test("canceling during final cache.put preserves the enabled release and removes the canceled pack", async () => {
   const oldRelease = await pack("clinvar-old", [[annotation("old", user.rsid)]]);
   const nextRelease = await pack("clinvar-next", [[annotation("next", user.rsid)]]);

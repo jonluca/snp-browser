@@ -1,6 +1,7 @@
 import { applyFileMetadata, detectFileMetadata } from "../metadata";
 import type { DNAParser, ParserMetadata, ProgressCallback, ValidationResult } from "../types";
 import type { ParseResult, UserGenotype } from "../../types/snp";
+import { normalizeAssembly } from "../../utils/variantIdentity";
 
 const METADATA: ParserMetadata = {
   id: "color",
@@ -48,12 +49,14 @@ export class ParserColor implements DNAParser {
   }
 
   async parse(content: string, onProgress: ProgressCallback): Promise<ParseResult> {
+    const fileMetadata = detectFileMetadata(content);
     const lines = content.split("\n");
     const genotypes: UserGenotype[] = [];
     const errors: string[] = [];
     let skippedLines = 0;
     const totalLines = lines.length;
     const batchSize = 1000;
+    let referenceVersionColumn = -1;
 
     onProgress(0, totalLines);
 
@@ -66,6 +69,7 @@ export class ParserColor implements DNAParser {
 
       const parts = this.parseCSVLine(line).map((part) => part.trim());
       if (this.isHeader(parts)) {
+        referenceVersionColumn = parts.findIndex((part) => part.toUpperCase() === "REFERENCEVERSION");
         skippedLines++;
         continue;
       }
@@ -82,11 +86,18 @@ export class ParserColor implements DNAParser {
         continue;
       }
 
+      const declaredVersion = referenceVersionColumn >= 0 ? parts[referenceVersionColumn]?.trim() : undefined;
+      const rowAssembly = declaredVersion ? normalizeAssembly(declaredVersion) : fileMetadata.assembly;
+      // An explicit row value is not replaced with an incompatible header
+      // default, including when the row names an unsupported reference build.
+      const assembly = fileMetadata.assembly && rowAssembly !== fileMetadata.assembly ? undefined : rowAssembly;
+
       genotypes.push({
         rsid: rsid.toLowerCase(),
         chromosome,
         position,
         genotype: genotype.toLowerCase(),
+        ...(assembly ? { assembly } : {}),
       });
 
       if (i % batchSize === 0 || i === lines.length - 1) {
@@ -94,15 +105,22 @@ export class ParserColor implements DNAParser {
       }
     }
 
-    return applyFileMetadata(
+    const result = applyFileMetadata(
       {
         genotypes,
         totalLines,
         skippedLines,
         errors,
       },
-      detectFileMetadata(content),
+      { strand: fileMetadata.strand },
     );
+    const assemblies = new Set<UserGenotype["assembly"]>();
+    for (const genotype of genotypes) assemblies.add(genotype.assembly);
+    if (assemblies.size === 1) {
+      const [assembly] = assemblies;
+      if (assembly) result.assembly = assembly;
+    }
+    return result;
   }
 
   private isHeader(parts: string[]): boolean {

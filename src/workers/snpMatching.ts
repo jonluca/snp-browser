@@ -1,6 +1,7 @@
 import type { Database } from "sql.js";
 import type { UserGenotype, MatchedSNP, ParsedSNPData } from "../types/snp";
 import { extractSnpediaFields, type SnpediaSourceFields } from "../utils/snpediaFields";
+import { userCallIdentity } from "../utils/matchIdentity";
 
 type OptionalSnpColumn = "gene" | "gene_s" | "clin_gene_name" | "clin_sig" | "clin_disease";
 
@@ -116,6 +117,9 @@ export async function matchSNPsInBatches(
   onProgress: (current: number, total: number) => void,
 ): Promise<MatchedSNP[]> {
   const matches: MatchedSNP[] = [];
+  // Retain references to emitted matches instead of serializing large source
+  // articles into deduplication keys. Different evidence is never collapsed.
+  const emitted = new Map<string, MatchedSNP[]>();
   const batchSize = 500; // Stay well under SQLite's 999 parameter limit
 
   // create index on lowercase snp_id for faster lookups
@@ -165,21 +169,38 @@ export async function matchSNPsInBatches(
         const effectiveOrientation: Orientation =
           stabilizedOrientation !== "unknown" ? stabilizedOrientation : orientation;
 
-        // Find matching user genotype for this SNP, taking orientation into account
-        const userGenotype = genotypesByRsid.get(snp_id.toLowerCase())?.find((g) => {
+        // Preserve distinct calls even when they occur in the same batch.
+        for (const userGenotype of genotypesByRsid.get(snp_id.toLowerCase()) ?? []) {
           // 23andMe genotypes are plus-strand. If SNPedia’s effective orientation is minus,
           // flip the user genotype into minus to match SNPedia’s definitions.
-          let normalizedUserGenotype = normalizeGenotype(g.genotype || "");
-          if (!normalizedUserGenotype || normalizedUserGenotype === "--") return false;
+          let normalizedUserGenotype = normalizeGenotype(userGenotype.genotype || "");
+          if (!normalizedUserGenotype || normalizedUserGenotype === "--") continue;
           if (effectiveOrientation === "minus") {
             normalizedUserGenotype = normalizeGenotype(complementGenotype(normalizedUserGenotype));
           }
 
-          return normalizedUserGenotype === snpediaGenotype;
-        });
-
-        if (userGenotype) {
+          if (normalizedUserGenotype !== snpediaGenotype) continue;
           const rsid = row.rsid as string;
+          const key = JSON.stringify([userCallIdentity(userGenotype), row.genotype_id]);
+          const previous = emitted.get(key);
+          if (
+            previous?.some(
+              (match) =>
+                match.snpData.rsid === rsid &&
+                match.snpData.content === snpContent &&
+                match.snpData.scraped_at === row.snp_scraped_at &&
+                match.snpData.gene === row.snp_gene &&
+                match.snpData.gene_s === row.snp_gene_s &&
+                match.snpData.clin_gene_name === row.snp_clin_gene_name &&
+                match.snpData.clin_sig === row.snp_clin_sig &&
+                match.snpData.clin_disease === row.snp_clin_disease &&
+                match.genotypeData?.snp_id === snp_id &&
+                match.genotypeData.genotype === snpediaGenotype &&
+                match.genotypeData.content === genotypeContent &&
+                match.genotypeData.scraped_at === row.genotype_scraped_at,
+            )
+          )
+            continue;
 
           // Parse content (this will also re-parse orientation and make it available downstream)
           const snpFields = {
@@ -191,7 +212,7 @@ export async function matchSNPsInBatches(
           };
           const parsedData = parseContentData(rsid, snpContent, genotypeContent, snpFields);
 
-          matches.push({
+          const match: MatchedSNP = {
             ...userGenotype,
             snpData: {
               rsid,
@@ -212,7 +233,10 @@ export async function matchSNPsInBatches(
               genotype: snpediaGenotype,
             },
             parsedData,
-          });
+          };
+          matches.push(match);
+          if (previous) previous.push(match);
+          else emitted.set(key, [match]);
         }
       }
     } finally {

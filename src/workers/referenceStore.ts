@@ -16,6 +16,7 @@ import {
   normalizeAssembly,
   normalizeChromosome,
   normalizePosition,
+  normalizeRsid,
 } from "../utils/variantIdentity";
 import { publicReferenceUrl, validateReferenceManifest } from "./referenceManifest";
 import {
@@ -76,6 +77,45 @@ function callSignature(user: UserGenotype): string {
     user.ref ? orient(user.ref) : undefined,
     user.strand === "plus" || user.strand === "minus" ? "plus" : "unknown",
   ]);
+}
+
+type IndexedUsers = UserGenotype | UserGenotype[];
+
+function indexUser(index: Map<string, IndexedUsers>, key: string, user: UserGenotype): void {
+  const existing = index.get(key);
+  if (!existing) index.set(key, user);
+  else if (Array.isArray(existing)) existing.push(user);
+  else index.set(key, [existing, user]);
+}
+
+function matchingKeys(
+  canonicalUsers: Map<string, IndexedUsers>,
+  byLocation: Map<string, IndexedUsers>,
+): PreparedReferenceKeys {
+  const keys: string[] = [];
+  for (const id of canonicalUsers.keys()) {
+    const rsid = normalizeRsid(id);
+    if (rsid) keys.push(`r:${rsid}`);
+  }
+  // The locus index already owns these strings; reuse them for shard routing.
+  for (const key of byLocation.keys()) keys.push(key);
+  return prepareReferenceKeys(keys);
+}
+
+function ambiguousUsers(...indexes: Map<string, IndexedUsers>[]): Set<string> {
+  const ambiguous = new Set<string>();
+  for (const index of indexes) {
+    for (const users of index.values()) {
+      if (!Array.isArray(users)) continue;
+      const signature = callSignature(users[0]);
+      for (let position = 1; position < users.length; position++) {
+        if (callSignature(users[position]) === signature) continue;
+        for (const user of users) ambiguous.add(user.rsid.toLowerCase());
+        break;
+      }
+    }
+  }
+  return ambiguous;
 }
 
 export class ReferenceStore {
@@ -451,6 +491,34 @@ export class ReferenceStore {
     });
   }
 
+  private async resolveMatchAliases(genotypes: UserGenotype[], packs: ReferencePack[]): Promise<Map<string, string>> {
+    const aliases = new Map<string, string>();
+    const dbsnpPacks = packs.filter((pack) => pack.source === "dbsnp");
+    if (!dbsnpPacks.length) return aliases;
+    const keys = new Set<string>();
+    for (const user of genotypes) {
+      const rsid = normalizeRsid(user.rsid);
+      if (rsid) keys.add(`r:${rsid}`);
+    }
+    if (!keys.size) return aliases;
+    const rawKeys = prepareReferenceKeys([...keys]);
+    keys.clear();
+    for (const pack of dbsnpPacks) {
+      await this.scan(
+        pack,
+        (database, shard) => {
+          for (const [alias, canonical] of lookupReferenceAliases(
+            database,
+            filterReferenceKeys(shard, rawKeys).map((key) => key.slice(2)),
+          ))
+            aliases.set(alias, canonical);
+        },
+        rawKeys,
+      );
+    }
+    return aliases;
+  }
+
   async match(
     genotypes: UserGenotype[],
     onProgress: (current: number, total: number) => void,
@@ -461,57 +529,22 @@ export class ReferenceStore {
       const evidence = new Map<string, AnnotationEvidence[]>();
       const summaries = new Map<string, AnnotationMatchSummary>();
       if (!packs.length || !genotypes.length) return { evidence, summaries };
-      const byRsid = new Map<string, UserGenotype[]>();
-      for (const genotype of genotypes) {
-        const key = genotype.rsid.toLowerCase();
-        const group = byRsid.get(key) ?? [];
-        group.push(genotype);
-        byRsid.set(key, group);
-      }
-      const aliases = new Map<string, string>();
-      const rawIds = [...byRsid.keys()];
-      const rawKeys = prepareReferenceKeys(rawIds.flatMap((id) => referenceLookupKeys(id)));
-      for (const pack of packs.filter((pack) => pack.source === "dbsnp")) {
-        await this.scan(
-          pack,
-          (database, shard) => {
-            for (const [alias, canonical] of lookupReferenceAliases(
-              database,
-              filterReferenceKeys(shard, rawKeys).map((key) => key.slice(2)),
-            ))
-              aliases.set(alias, canonical);
-          },
-          rawKeys,
-        );
-      }
-      const canonicalUsers = new Map<string, UserGenotype[]>();
-      for (const [rsid, users] of byRsid) {
-        const canonical = aliases.get(rsid) ?? rsid;
-        canonicalUsers.set(canonical, [...(canonicalUsers.get(canonical) ?? []), ...users]);
-      }
+      // Resolve aliases before retaining the genome indexes, so temporary alias
+      // routing data does not remain live throughout a multi-million-call match.
+      const aliases = await this.resolveMatchAliases(genotypes, packs);
+      const canonicalUsers = new Map<string, IndexedUsers>();
+      const byLocation = new Map<string, IndexedUsers>();
       const genes = new Map<string, Set<string>>();
-      const canonicalIds = [...canonicalUsers.keys()];
-      const locations = new Map<string, ReferenceLocation>();
-      const byLocation = new Map<string, UserGenotype[]>();
       for (const user of genotypes) {
+        const rsid = user.rsid.toLowerCase();
+        indexUser(canonicalUsers, aliases.get(rsid) ?? rsid, user);
         const location = referenceLocation(user);
-        if (!location) continue;
-        const key = locationKey(location);
-        locations.set(key, location);
-        const users = byLocation.get(key) ?? [];
-        users.push(user);
-        byLocation.set(key, users);
+        if (location) indexUser(byLocation, `l:${locationKey(location)}`, user);
       }
-      const coordinateList = [...locations.values()];
-      const candidateKeys = prepareReferenceKeys([
-        ...canonicalIds.flatMap((id) => referenceLookupKeys(id)),
-        ...coordinateList.flatMap((location) => referenceLookupKeys(undefined, location)),
-      ]);
-      const ambiguous = new Set<string>();
-      for (const users of [...canonicalUsers.values(), ...byLocation.values()]) {
-        if (new Set(users.map(callSignature)).size > 1)
-          for (const user of users) ambiguous.add(user.rsid.toLowerCase());
-      }
+      const candidateKeys = matchingKeys(canonicalUsers, byLocation);
+      // Both complete indexes must be checked before the first annotation is
+      // added, including conflicting calls far apart in the uploaded file.
+      const ambiguous = ambiguousUsers(canonicalUsers, byLocation);
       const seen = new Map<string, Set<string>>();
       const add = (rsid: string, annotation: AnnotationEvidence) => {
         const key = rsid.toLowerCase();
@@ -541,13 +574,17 @@ export class ReferenceStore {
           pack,
           (database, shard) => {
             const possible = filterReferenceKeys(shard, candidateKeys);
-            const ids = possible.filter((key) => key.startsWith("r:")).map((key) => key.slice(2));
-            const coordinates = possible
-              .filter((key) => key.startsWith("l:"))
-              .flatMap((key) => {
-                const location = locations.get(key.slice(2));
-                return location ? [location] : [];
-              });
+            const ids: string[] = [];
+            const coordinates: ReferenceLocation[] = [];
+            for (const key of possible) {
+              if (key.startsWith("r:")) ids.push(key.slice(2));
+              else {
+                const group = byLocation.get(key);
+                const representative = Array.isArray(group) ? group[0] : group;
+                const location = representative && referenceLocation(representative);
+                if (location) coordinates.push(location);
+              }
+            }
             const found = new Map(
               [...lookupReferenceAnnotations(database, ids), ...lookupReferenceCoordinates(database, coordinates)].map(
                 (annotation) => [annotation.id, annotation],
@@ -555,10 +592,14 @@ export class ReferenceStore {
             );
             for (const annotation of found.values()) {
               const locus = referenceLocation(annotation);
-              const users = new Set([
-                ...(canonicalUsers.get(annotation.rsid?.toLowerCase() ?? "") ?? []),
-                ...(locus ? (byLocation.get(locationKey(locus)) ?? []) : []),
-              ]);
+              const users = new Set<UserGenotype>();
+              for (const group of [
+                canonicalUsers.get(annotation.rsid?.toLowerCase() ?? ""),
+                locus ? byLocation.get(`l:${locationKey(locus)}`) : undefined,
+              ]) {
+                if (Array.isArray(group)) for (const user of group) users.add(user);
+                else if (group) users.add(group);
+              }
               for (const user of users) {
                 const identity = ambiguous.has(user.rsid.toLowerCase())
                   ? {
