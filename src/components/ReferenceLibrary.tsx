@@ -1,5 +1,7 @@
+import { useState } from "react";
 import type { ReferencePackState } from "../types/annotations";
 import { formatReferenceBytes, safeReferenceUrl } from "../utils/annotationPresentation";
+import { REFERENCE_CATEGORIES, REFERENCE_SOURCE_INFO, type ReferenceCategory } from "../utils/referenceSourceInfo";
 
 interface ReferenceLibraryProps {
   packs: ReferencePackState[];
@@ -33,6 +35,7 @@ function PackCard({
   const sample = /\b(?:sample|demo|example|subset)\b/i.test(pack.coverage);
   const downloading = status === "downloading";
   const ready = status === "ready";
+  const sourceInfo = REFERENCE_SOURCE_INFO[pack.source];
 
   return (
     <article className="surface-panel flex min-w-0 flex-col overflow-hidden">
@@ -50,6 +53,9 @@ function PackCard({
           </span>
         </div>
         <p className="mt-3 text-sm leading-6 text-slate-600">{pack.description}</p>
+        <p className="mt-3 text-xs leading-5 text-brand-700">
+          <span className="font-semibold">{REFERENCE_CATEGORIES[sourceInfo.category]}.</span> {sourceInfo.use}
+        </p>
         <div className="mt-4 rounded-lg border border-slate-100 bg-slate-50/70 p-3">
           <p className="text-[11px] font-semibold tracking-wide text-slate-500">
             {sample ? "SAMPLE COVERAGE" : "COVERAGE"}
@@ -199,7 +205,24 @@ export function ReferenceLibrary({
   onRetry,
   onClear,
 }: ReferenceLibraryProps) {
+  const [category, setCategory] = useState<ReferenceCategory | "all">("all");
+  const [search, setSearch] = useState("");
+  const [smallOnly, setSmallOnly] = useState(false);
   const readyCount = packs.filter((state) => state.status === "ready").length;
+  const savedBytes = packs
+    .filter((state) => state.status === "ready")
+    .reduce((total, state) => total + state.totalBytes, 0);
+  const enabledCount = packs.filter((state) => state.status === "ready" && state.enabled).length;
+  const visiblePacks = packs.filter((state) => {
+    const sourceInfo = REFERENCE_SOURCE_INFO[state.pack.source];
+    return (
+      (category === "all" || category === sourceInfo.category) &&
+      (!smallOnly || state.pack.shards.reduce((total, shard) => total + shard.bytes, 0) <= 25 * 1024 * 1024) &&
+      `${state.pack.name} ${state.pack.description} ${state.pack.coverage} ${sourceInfo.use}`
+        .toLowerCase()
+        .includes(search.trim().toLowerCase())
+    );
+  });
   return (
     <section className="min-w-0" aria-label="Reference library" aria-busy={loading}>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -207,8 +230,8 @@ export function ReferenceLibrary({
           <p className="section-label">More context for your variants</p>
           <h2 className="mt-2 text-2xl font-semibold tracking-tight text-slate-950">Reference library</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-600">
-            Download reference packs to this browser, then choose which sources to include. Matching happens on your
-            device.
+            Choose the evidence you want to explore. Public datasets download directly to this browser and are matched
+            locally. No personal variants are sent with a download.
           </p>
         </div>
         {packs.length > 0 && (
@@ -216,9 +239,55 @@ export function ReferenceLibrary({
             <span className="font-medium text-slate-800">
               {readyCount} of {packs.length}
             </span>{" "}
-            saved here
+            saved here · {enabledCount} enabled · {formatReferenceBytes(savedBytes)} in current packs
           </p>
         )}
+      </div>
+      <div className="mb-5 rounded-xl border border-brand-100 bg-brand-50 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="max-w-2xl">
+            <h3 className="text-sm font-semibold text-brand-700">Start with a smaller library</h3>
+            <p className="mt-1 text-xs leading-5 text-slate-600">
+              Curated gene–disease and protein references add useful context with smaller downloads. Larger clinical and
+              association packs can be added when you want broader coverage.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="secondary-button text-xs"
+            aria-pressed={smallOnly}
+            onClick={() => setSmallOnly((value) => !value)}
+          >
+            {smallOnly ? "Show every pack size" : "Show packs under 25 MiB"}
+          </button>
+        </div>
+      </div>
+      <div className="mb-5 grid gap-3 sm:grid-cols-[minmax(0,1fr)_240px]">
+        <label className="block text-xs font-medium text-slate-600">
+          Find a source
+          <input
+            type="search"
+            value={search}
+            onChange={(event) => setSearch(event.currentTarget.value)}
+            placeholder="Search sources and coverage"
+            className="field-control mt-1.5"
+          />
+        </label>
+        <label className="block text-xs font-medium text-slate-600">
+          Type of evidence
+          <select
+            value={category}
+            onChange={(event) => setCategory(event.currentTarget.value as ReferenceCategory | "all")}
+            className="field-control mt-1.5"
+          >
+            <option value="all">All evidence</option>
+            {Object.entries(REFERENCE_CATEGORIES).map(([key, label]) => (
+              <option key={key} value={key}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
       <div className="surface-panel mb-5 flex flex-wrap items-center justify-between gap-4 p-4 sm:px-5">
         <div className="max-w-2xl text-xs leading-5 text-slate-500">
@@ -264,7 +333,7 @@ export function ReferenceLibrary({
         </div>
       )}
       <div className="grid min-w-0 gap-4 xl:grid-cols-2">
-        {packs.map((state) => (
+        {visiblePacks.map((state) => (
           <PackCard
             key={state.pack.id}
             state={state}
@@ -275,6 +344,22 @@ export function ReferenceLibrary({
           />
         ))}
       </div>
+      {!loading && packs.length > 0 && visiblePacks.length === 0 && (
+        <div className="surface-panel p-8 text-center text-sm text-slate-500">
+          No sources match these filters.{" "}
+          <button
+            type="button"
+            className="cursor-pointer font-medium text-brand-700 underline"
+            onClick={() => {
+              setSearch("");
+              setCategory("all");
+              setSmallOnly(false);
+            }}
+          >
+            Reset filters
+          </button>
+        </div>
+      )}
     </section>
   );
 }

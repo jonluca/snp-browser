@@ -1,7 +1,7 @@
 {
   "name": "SNP Browser - Genetic Data Explorer",
   "short_name": "SNP Browser",
-  "description": "Privacy-preserving genomic data browser for exploring SNPedia and 23andMe genetic variants",
+  "description": "Private, on-device DNA exploration with research-backed trait suggestions and downloadable genetic references",
   "start_url": "/",
   "scope": "/",
   "icons": [
@@ -18,8 +18,8 @@
       "purpose": "any maskable"
     }
   ],
-  "theme_color": "#3b82f6",
-  "background_color": "#f9fafb",
+  "theme_color": "#14624d",
+  "background_color": "#f7f8f5",
   "display": "standalone",
   "orientation": "any",
   "categories": ["health", "medical", "utilities", "productivity"],

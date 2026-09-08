@@ -17,6 +17,7 @@ import { ANNOTATION_SOURCE_NAMES, safeReferenceUrl } from "../utils/annotationPr
 
 interface SNPBrowserProps {
   workerApi: Remote<SNPMatcherWorkerApi>;
+  snpediaReady?: boolean;
   referencePacks: ReferencePackState[];
   referenceRevision: number;
   onManageReferences: () => void;
@@ -115,9 +116,17 @@ function useDebouncedFilters(filters: Filters) {
 
 const recordKey = (snp: SNPRecord) => snp.referenceKey || snp.rsid;
 
-export function SNPBrowser({ workerApi, referencePacks, referenceRevision, onManageReferences }: SNPBrowserProps) {
+export function SNPBrowser({
+  workerApi,
+  snpediaReady = true,
+  referencePacks,
+  referenceRevision,
+  onManageReferences,
+}: SNPBrowserProps) {
   const [chosenPackId, setChosenPackId] = useState("");
-  const selectedPack = referencePacks.find((state) => state.pack.id === chosenPackId && state.status === "ready");
+  const selectedPack =
+    referencePacks.find((state) => state.pack.id === chosenPackId && state.status === "ready") ??
+    (!snpediaReady ? referencePacks.find((state) => state.status === "ready") : undefined);
   const referencePackId = selectedPack?.pack.id;
   const [filters, setFilters] = useState(EMPTY_FILTERS);
   const queryFilters = useDebouncedFilters(filters);
@@ -340,7 +349,9 @@ export function SNPBrowser({ workerApi, referencePacks, referenceRevision, onMan
                 setDetailOpen(false);
               }}
             >
-              <option value="">SNPedia</option>
+              <option value="" disabled={!snpediaReady}>
+                SNPedia{!snpediaReady ? " (unavailable)" : ""}
+              </option>
               {referencePacks.map((state) => (
                 <option key={state.pack.id} value={state.pack.id} disabled={state.status !== "ready"}>
                   {state.pack.name}

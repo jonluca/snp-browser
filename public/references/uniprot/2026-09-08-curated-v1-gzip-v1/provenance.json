@@ -1,0 +1,38 @@
+{
+  "preparedAt": "2026-09-08T02:17:06Z",
+  "sourceRelease": "2026_02 of 10-Jun-2026",
+  "coverage": "Every supplied humsavar row with a valid dbSNP rsID, including benign and uncertain categories; rows without rsIDs cannot be matched and are counted in provenance. Protein substitutions and disease/sample labels are reference context only: an rsID alone does not confirm the source protein substitution in a user's DNA.",
+  "urls": [
+    "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/docs/humsavar.txt"
+  ],
+  "downloads": [
+    {
+      "url": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/docs/humsavar.txt",
+      "fetchedAt": "2026-09-08T02:12:57Z"
+    }
+  ],
+  "inputs": [
+    {
+      "name": "humsavar.txt",
+      "bytes": 8688006,
+      "sha256": "6fd997446bee1219a2cc5dfa02e2614ad3d10bdba6ebab30dc226ca6f89cf290"
+    }
+  ],
+  "selectionStats": {
+    "sourceRows": 84845,
+    "emittedAnnotations": 70891,
+    "skippedMissingRsid": 13954
+  },
+  "adapter": "tools/reference/curated.py",
+  "privacy": "Fixed public source snapshot only. No user-file, personal identifier, or genotype query.",
+  "assetCompression": {
+    "format": "gzip",
+    "level": 9,
+    "preparedAt": "2026-09-08T02:17:06Z",
+    "sourcePackVersion": "2026-09-08-curated-v1",
+    "sourceCatalogSha256": "b8e463c55aebe00a473d5565a2cb3df72a21a1834d5bfb6eec5a7db3a96ae0c1",
+    "pythonVersion": "3.14.7",
+    "zlibVersion": "1.2.12",
+    "verification": "Every input SQLite hash and every fully inflated output hash match the original manifest; encoded hashes recorded separately."
+  }
+}

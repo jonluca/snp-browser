@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { twMerge } from "tailwind-merge";
 import { useSNPMatcherWorker, proxy } from "./hooks/useSNPMatcherWorker";
 import { FileUpload } from "./components/FileUpload";
@@ -7,6 +8,8 @@ import { ImportedReportView } from "./components/ImportedReportView";
 import { ImportedCallsView } from "./components/ImportedCallsView";
 import { SNPBrowser } from "./components/SNPBrowser";
 import { ReferenceLibrary } from "./components/ReferenceLibrary";
+import { DNASuggestions } from "./components/DNASuggestions";
+import { LocalWorkspaceStatus } from "./components/LocalWorkspaceStatus";
 import { useReferenceLibrary } from "./hooks/useReferenceLibrary";
 import type { ParseResult, MatchedSNP, MatchedGenoset } from "./types/snp";
 import { DB_URL } from "./constants.ts";
@@ -37,6 +40,7 @@ function formatBytes(bytes: number): string {
 }
 
 function App() {
+  const queryClient = useQueryClient();
   const [mode, setMode] = useState<AppMode>("upload");
   const [isDbLoading, setIsDbLoading] = useState(true);
   const [dbLoadProgress, setDbLoadProgress] = useState(0);
@@ -47,7 +51,7 @@ function App() {
   const processingRef = useRef(false);
   const [parseResult, setParseResult] = useState<ParseResult | null>(null);
   const [detectedFormat, setDetectedFormat] = useState<string | null>(null);
-  const [resultView, setResultView] = useState<"matches" | "calls" | "report">("matches");
+  const [resultView, setResultView] = useState<"suggestions" | "matches" | "calls" | "report">("suggestions");
   const [isParsing, setIsParsing] = useState(false);
   const [matches, setMatches] = useState<MatchedSNP[] | null>(null);
   const [genosets, setGenosets] = useState<MatchedGenoset[] | null>(null);
@@ -131,6 +135,10 @@ function App() {
       if (!workerApi || !parserWorkerApi || processingRef.current) return;
       processingRef.current = true;
       setFileName(file.name);
+      setParseResult(null);
+      setMatches(null);
+      setGenosets(null);
+      queryClient.removeQueries({ queryKey: ["matched-annotations"] });
 
       try {
         // Parse file in worker thread with progress reporting
@@ -165,7 +173,7 @@ function App() {
           processingRef.current = false;
           return;
         }
-        setResultView("matches");
+        setResultView("suggestions");
         if (result.genotypes.length === 0) {
           setMatchError(
             new Error(
@@ -185,7 +193,8 @@ function App() {
 
         progressPhaseRef.current = "database";
         if (dbLoadPromiseRef.current) {
-          await dbLoadPromiseRef.current;
+          // Trait analysis and independently cached references remain usable when SNPedia is unavailable.
+          await dbLoadPromiseRef.current.catch(() => undefined);
         }
 
         progressPhaseRef.current = "snps";
@@ -238,7 +247,7 @@ function App() {
       }
       processingRef.current = false;
     },
-    [parserWorkerApi, workerApi, references.revision],
+    [parserWorkerApi, workerApi, references.revision, queryClient],
   );
 
   const refreshAnalysis = async () => {
@@ -275,25 +284,26 @@ function App() {
   };
 
   const handleReset = useCallback(() => {
+    queryClient.removeQueries({ queryKey: ["matched-annotations"] });
     setFileName(null);
     setParseResult(null);
     setDetectedFormat(null);
-    setResultView("matches");
+    setResultView("suggestions");
     setMatches(null);
     setGenosets(null);
     setMatchError(null);
     setMode("upload");
-  }, []);
+  }, [queryClient]);
 
   // Determine app state
-  const hasResults = matches !== null && genosets !== null;
+  const hasResults = Boolean(parseResult && (parseResult.genotypes.length || parseResult.report));
   const uploadError = mode === "upload" ? matchError : null;
   const error = workerError || parserWorkerError || uploadError || dbError;
   const isFileError = Boolean(uploadError && error === uploadError && error !== dbError);
   const hasError = Boolean(error);
   const isDatabaseReady = Boolean(dbStats) && !isDbLoading && !dbError;
   const isProcessing = isParsing || isMatching || isMatchingGenosets;
-  const isWaitingForDatabase = isMatching && !isDatabaseReady;
+  const isWaitingForDatabase = isMatching && isDbLoading && !dbError;
   const canUpload =
     Boolean(parserWorkerApi) &&
     Boolean(workerApi) &&
@@ -386,6 +396,7 @@ function App() {
       </header>
 
       <main id="main-content" className="mx-auto max-w-[1440px] px-4 pb-8 pt-6 sm:px-6 lg:px-9">
+        <LocalWorkspaceStatus referenceRevision={references.revision} />
         {hasError && (
           <div
             role="alert"
@@ -410,9 +421,10 @@ function App() {
 
         {mode === "browse" &&
           !isProcessing &&
-          (isDatabaseReady && workerApi ? (
+          (workerApi && (isDatabaseReady || references.packs.some((pack) => pack.status === "ready")) ? (
             <SNPBrowser
               workerApi={workerApi}
+              snpediaReady={isDatabaseReady}
               referencePacks={references.packs}
               referenceRevision={references.revision}
               onManageReferences={() => setMode("references")}
@@ -461,15 +473,15 @@ function App() {
                 A clearer view of your genetic data.
               </h1>
               <p className="mt-6 max-w-lg text-base leading-7 text-slate-600 sm:text-lg">
-                Connect your raw DNA export to SNPedia and additional reference datasets. Explore individual variants,
-                discover related genosets, and keep the findings that matter to you.
+                Discover what your DNA may suggest about you, then explore the research behind your variants. Bring
+                together public genetic references in one workspace that runs entirely in your browser.
               </p>
               <div className="my-8 h-px w-14 bg-brand-500" />
               <ol className="space-y-5">
                 {[
                   ["01", "Bring your DNA export", "Provider exports, VCF, Promethease and PDF reports."],
-                  ["02", "Find your matches", "Your genotypes, connected to reference annotations."],
-                  ["03", "Explore at your pace", "Search, filter, read the source, and export results."],
+                  ["02", "See what your DNA suggests", "Everyday traits, with the evidence and uncertainty visible."],
+                  ["03", "Build your reference library", "Choose public datasets to download and explore offline."],
                 ].map(([step, title, detail]) => (
                   <li key={step} className="flex gap-4">
                     <span className="pt-0.5 font-mono text-xs text-brand-700">{step}</span>
@@ -517,10 +529,17 @@ function App() {
         {isProcessing && (
           <section
             key={processingStage}
-            className="surface-panel mx-auto my-8 max-w-3xl px-6 py-12 text-center sm:px-12 sm:py-16"
+            className={
+              parseResult?.traits && !isParsing
+                ? "surface-panel mb-6 px-5 py-5 text-center"
+                : "surface-panel mx-auto my-8 max-w-3xl px-6 py-12 text-center sm:px-12 sm:py-16"
+            }
             aria-busy="true"
           >
-            <div className="mb-8 flex justify-center gap-3" aria-label={`Analysis step ${processingStage + 1} of 3`}>
+            <div
+              className={parseResult?.traits && !isParsing ? "hidden" : "mb-8 flex justify-center gap-3"}
+              aria-label={`Analysis step ${processingStage + 1} of 3`}
+            >
               {["Read file", "Match variants", "Find genosets"].map((label, index) => (
                 <span
                   key={label}
@@ -558,23 +577,36 @@ function App() {
             <p ref={progressTextRef} className="text-xs tabular-nums text-slate-500">
               {isWaitingForDatabase ? `${dbLoadProgress}% complete` : "Starting…"}
             </p>
-            <p className="mt-9 text-xs text-slate-400">Keep this tab open while your file is processed locally.</p>
+            <p className="mt-4 text-xs text-slate-400">
+              {parseResult?.traits && !isParsing
+                ? "Your trait suggestions are ready below. Reference matching continues on this device."
+                : "Keep this tab open while your file is processed locally."}
+            </p>
           </section>
         )}
 
-        {mode === "upload" && hasResults && matches && genosets && !isProcessing && (
+        {mode === "upload" && isProcessing && !isParsing && parseResult?.traits && (
+          <DNASuggestions
+            analysis={parseResult.traits}
+            packs={references.packs}
+            matching
+            onReferences={() => setMode("references")}
+            onMatches={() => setResultView("matches")}
+          />
+        )}
+
+        {mode === "upload" && hasResults && !isProcessing && (
           <>
-            <div className="mb-6 flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 pb-3">
               <div className="min-w-0">
-                <p className="section-label mb-1.5">Your analysis</p>
                 <h1
-                  className="truncate text-2xl font-semibold tracking-tight text-slate-950"
+                  className="truncate text-lg font-semibold tracking-tight text-slate-950"
                   title={fileName ?? undefined}
                 >
                   {fileName ?? "DNA analysis"}
                 </h1>
                 {parseResult && (
-                  <p className="mt-2 text-xs text-slate-500">
+                  <p className="mt-1 text-xs text-slate-500">
                     {parseResult.report?.format === "pdf"
                       ? `${parseResult.report.pages.length.toLocaleString()} report pages read`
                       : `${parseResult.genotypes.length.toLocaleString()} ${parseResult.genotypes.length === 1 ? "variant" : "variants"} read`}
@@ -605,21 +637,31 @@ function App() {
               </details>
             ) : null}
             {parseResult && parseResult.genotypes.length > 0 && (
-              <nav aria-label="Analysis results" className="mb-5 flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
-                {(["matches", "calls", ...(parseResult.report ? ["report" as const] : [])] as const).map((view) => (
-                  <button
-                    key={view}
-                    type="button"
-                    onClick={() => setResultView(view)}
-                    aria-current={resultView === view ? "page" : undefined}
-                    className={twMerge(
-                      "cursor-pointer rounded-md px-4 py-2 text-sm font-medium",
-                      resultView === view ? "bg-white text-brand-700 shadow-sm" : "text-slate-500 hover:text-slate-900",
-                    )}
-                  >
-                    {view === "matches" ? "Reference matches" : view === "calls" ? "Imported calls" : "Source report"}
-                  </button>
-                ))}
+              <nav aria-label="Analysis results" className="mb-3 flex flex-wrap gap-1 rounded-lg bg-slate-100 p-1">
+                {(["suggestions", "matches", "calls", ...(parseResult.report ? ["report" as const] : [])] as const).map(
+                  (view) => (
+                    <button
+                      key={view}
+                      type="button"
+                      onClick={() => setResultView(view)}
+                      aria-current={resultView === view ? "page" : undefined}
+                      className={twMerge(
+                        "cursor-pointer rounded-md px-4 py-2 text-sm font-medium",
+                        resultView === view
+                          ? "bg-white text-brand-700 shadow-sm"
+                          : "text-slate-500 hover:text-slate-900",
+                      )}
+                    >
+                      {view === "suggestions"
+                        ? "About you"
+                        : view === "matches"
+                          ? "Reference matches"
+                          : view === "calls"
+                            ? "Imported calls"
+                            : "Source report"}
+                    </button>
+                  ),
+                )}
               </nav>
             )}
             {parseResult && parseResult.genotypes.length > 0 && analyzedReferenceRevision !== references.revision && (
@@ -639,10 +681,18 @@ function App() {
             )}
             {resultView === "report" && parseResult?.report && <ImportedReportView report={parseResult.report} />}
             {resultView === "calls" && parseResult && <ImportedCallsView calls={parseResult.genotypes} />}
+            {resultView === "suggestions" && parseResult?.traits && (
+              <DNASuggestions
+                analysis={parseResult.traits}
+                packs={references.packs}
+                onReferences={() => setMode("references")}
+                onMatches={() => setResultView("matches")}
+              />
+            )}
             {resultView === "matches" && (
               <ResultsDisplay
-                matches={matches}
-                genosets={genosets}
+                matches={matches ?? []}
+                genosets={genosets ?? []}
                 workerApi={workerApi!}
                 referenceRevision={references.revision}
               />

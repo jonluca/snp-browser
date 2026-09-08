@@ -1,0 +1,45 @@
+{
+  "clingen": {
+    "name": "ClinGen gene validity",
+    "description": "Expert-curated gene–disease validity classifications, inheritance, and expert panels.",
+    "homepage": "https://search.clinicalgenome.org/kb/gene-validity",
+    "license": "Creative Commons CC0 1.0",
+    "licenseUrl": "https://clinicalgenome.org/docs/terms-of-use/",
+    "attribution": "Clinical Genome Resource (ClinGen). Gene–Disease Validity classifications; source access date and release are recorded in provenance.json. Converted to indexed gene context with original classification, inheritance and curation links retained. No endorsement is implied.",
+    "downloadUrl": "https://search.clinicalgenome.org/kb/gene-validity/download",
+    "filename": "clingen.csv",
+    "coverage": "Complete supplied ClinGen gene–disease validity CSV rows with gene, HGNC, MONDO and curation identities. Includes limited, disputed and refuted classifications as well as stronger evidence. Gene context only; no personal disease or allele inference."
+  },
+  "orphanet": {
+    "name": "Orphanet rare disease genes",
+    "description": "Rare-disease gene relationships, association types, assessment status, identifiers, and supporting publications.",
+    "homepage": "https://sciences.orphadata.com/genes/",
+    "license": "Creative Commons Attribution 4.0",
+    "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+    "attribution": "Orphadata Science: Free access data from Orphanet. © INSERM 1999. Available at https://sciences.orphadata.com/. XML data version is recorded in sourceRelease and provenance.json. Converted and indexed as gene context, retaining original relationship types, assessment status and references. No endorsement is implied.",
+    "downloadUrl": "https://www.orphadata.com/data/xml/en_product6.xml",
+    "filename": "orphanet.xml",
+    "coverage": "Complete supplied English Orphadata product 6 disorder–gene relationships with stable disorder, gene and association-type identifiers. Relationships are retained at the source's exact disease/subtype level, without inheritance propagation or inferred genomic alleles."
+  },
+  "panelapp": {
+    "name": "PanelApp",
+    "description": "Offline adapter for high-evidence genes on public version 1+ panels; no bundled data pack.",
+    "homepage": "https://panelapp.genomicsengland.co.uk/",
+    "license": "Genomics England PanelApp content terms; public derived-pack redistribution not established",
+    "licenseUrl": "https://prod-media-panelapp.genomicsengland.co.uk/media/files/GEL_-_PanelApp_Terms_of_Use_December_2019.pdf",
+    "attribution": "Genomics England PanelApp and contributing reviewers. The software repository's Apache license does not license PanelApp content. No PanelApp data is redistributed by this preparation tool.",
+    "status": "adapter-only",
+    "reason": "UK endpoint returned HTTP 403 during preparation; content terms restrict commercialisation and include third-party data rights. A redistributable source license is required before publishing a static derived pack."
+  },
+  "uniprot": {
+    "name": "UniProt curated human variants",
+    "description": "Literature-curated human protein substitutions, source categories, and disease or sample labels linked by rsID.",
+    "homepage": "https://www.uniprot.org/docs/humsavar",
+    "license": "Creative Commons Attribution 4.0",
+    "licenseUrl": "https://www.uniprot.org/help/license/",
+    "attribution": "UniProt Consortium, UniProtKB/Swiss-Prot humsavar. Converted to indexed rsID context; original protein feature identifiers, substitutions and source categories retained. Missing rsID rows are omitted and no genomic allele mapping is invented. No endorsement is implied.",
+    "downloadUrl": "https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/docs/humsavar.txt",
+    "filename": "humsavar.txt",
+    "coverage": "Every supplied humsavar row with a valid dbSNP rsID, including benign and uncertain categories; rows without rsIDs cannot be matched and are counted in provenance. Protein substitutions and disease/sample labels are reference context only: an rsID alone does not confirm the source protein substitution in a user's DNA."
+  }
+}

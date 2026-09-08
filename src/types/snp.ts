@@ -98,6 +98,7 @@ export interface ImportedReport {
 }
 
 export interface ParseResult {
+  traits?: import("./traits").TraitAnalysis;
   report?: ImportedReport;
   warnings?: string[];
   assembly?: GenomeAssembly;

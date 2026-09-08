@@ -34,7 +34,7 @@ export function referenceAssets(): Plugin {
       };
       await copyTree("");
       const origin = "https://reference-assets.invalid";
-      const base = new URL(config.env.VITE_REFERENCE_MANIFEST_URL || "/references/manifest.json", origin);
+      const base = new URL(config.env.VITE_REFERENCE_MANIFEST_URL || "/references/manifest-v2.json", origin);
       if (base.origin !== origin) return;
       const manifestPath = decodeURIComponent(base.pathname).replace(/^\/+/, "");
       if (!manifestPath.startsWith("references/") || manifestPath.split("/").includes("..")) {

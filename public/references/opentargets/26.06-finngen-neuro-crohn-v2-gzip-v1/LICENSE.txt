@@ -1,0 +1,5 @@
+Open Targets Platform data: CC0 1.0
+https://platform-docs.opentargets.org/licence
+https://creativecommons.org/publicdomain/zero/1.0/
+
+Open Targets Platform and FinnGen R12. Converted public fine-mapping data; cite the linked source studies. Posterior inclusion probability is a model's causal-variant probability within a study, not an individual's disease probability. Studies and participants may overlap with other reference sources.

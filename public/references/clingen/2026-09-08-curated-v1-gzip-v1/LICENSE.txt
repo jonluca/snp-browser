@@ -1,0 +1,4 @@
+Creative Commons CC0 1.0
+https://clinicalgenome.org/docs/terms-of-use/
+
+Clinical Genome Resource (ClinGen). Gene–Disease Validity classifications; source access date and release are recorded in provenance.json. Converted to indexed gene context with original classification, inheritance and curation links retained. No endorsement is implied.

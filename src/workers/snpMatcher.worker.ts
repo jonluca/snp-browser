@@ -12,6 +12,8 @@ import { ReferenceStore } from "./referenceStore";
 import { mergeReferenceMatches } from "./referenceMatching";
 import type { ReferenceDownloadProgress } from "../types/annotations";
 import type { ReferenceLocation } from "./referenceQueries";
+import { analyzeTraits } from "../utils/traitAnalysis";
+import { buildSnpediaGeneHints } from "./snpediaGeneHints";
 
 let sqlModulePromise: Promise<SqlJsStatic> | null = null;
 function getSqlModule(): Promise<SqlJsStatic> {
@@ -19,6 +21,7 @@ function getSqlModule(): Promise<SqlJsStatic> {
   return sqlModulePromise;
 }
 const referenceStore = new ReferenceStore(async (bytes) => new (await getSqlModule()).Database(bytes));
+let referenceInitialization: Promise<unknown> | undefined;
 
 /**
  * Worker state - holds the loaded database
@@ -226,7 +229,9 @@ const workerApi = {
     onProgress: (current: number, total: number) => void,
     parserId?: string,
   ): Promise<ParseResult & { detectedFormat?: string }> {
-    return parseFileWithDetection(fileContent, onProgress, parserId);
+    const result = await parseFileWithDetection(fileContent, onProgress, parserId);
+    result.traits = analyzeTraits(result.genotypes);
+    return result;
   },
 
   /**
@@ -238,7 +243,9 @@ const workerApi = {
     onProgress: (current: number, total: number) => void,
     parserId?: string,
   ): Promise<ParseResult & { detectedFormat?: string }> {
-    return parseFileBlobWithDetection(file, onProgress, parserId);
+    const result = await parseFileBlobWithDetection(file, onProgress, parserId);
+    result.traits = analyzeTraits(result.genotypes);
+    return result;
   },
 
   /**
@@ -333,18 +340,18 @@ const workerApi = {
     genotypes: UserGenotype[],
     onProgress: (current: number, total: number) => void,
   ): Promise<MatchedSNP[]> {
-    if (!db) {
-      throw new Error("Database not loaded. Call loadDatabase first.");
-    }
-
-    const snpediaMatches = await matchSNPsInBatches(db, snpsTableColumns, genotypes, (current, total) =>
-      onProgress(Math.round((current / Math.max(total, 1)) * genotypes.length * 0.7), genotypes.length),
-    );
+    await referenceInitialization?.catch(() => undefined);
+    const snpediaMatches = db
+      ? await matchSNPsInBatches(db, snpsTableColumns, genotypes, (current, total) =>
+          onProgress(Math.round((current / Math.max(total, 1)) * genotypes.length * 0.7), genotypes.length),
+        )
+      : [];
     const { summaries } = await referenceStore.match(
       genotypes,
       (current, total) =>
         onProgress(Math.round(genotypes.length * (0.7 + (0.3 * current) / Math.max(total, 1))), genotypes.length),
       true,
+      buildSnpediaGeneHints(snpediaMatches),
     );
     onProgress(genotypes.length, genotypes.length);
     return mergeReferenceMatches(genotypes, snpediaMatches, summaries);
@@ -357,9 +364,7 @@ const workerApi = {
     matchedSNPs: MatchedSNP[],
     onProgress: (current: number, total: number) => void,
   ): Promise<MatchedGenoset[]> {
-    if (!db) {
-      throw new Error("Database not loaded. Call loadDatabase first.");
-    }
+    if (!db) return [];
 
     return matchGenosets(db, matchedSNPs, onProgress);
   },
@@ -408,7 +413,9 @@ const workerApi = {
   },
 
   async initializeReferenceCatalog(manifestUrl: string) {
-    return referenceStore.initialize(manifestUrl);
+    const initialization = referenceStore.initialize(manifestUrl);
+    referenceInitialization = initialization;
+    return initialization;
   },
   getReferenceStates() {
     return referenceStore.getStates();
@@ -431,8 +438,8 @@ const workerApi = {
   async getReferenceAnnotations(rsid: string, location?: ReferenceLocation) {
     return referenceStore.lookup(rsid, location);
   },
-  async getMatchedAnnotations(user: UserGenotype, ambiguous = false) {
-    const { evidence } = await referenceStore.match([user], () => undefined);
+  async getMatchedAnnotations(user: UserGenotype | MatchedSNP, ambiguous = false) {
+    const { evidence } = await referenceStore.match([user], () => undefined, false, buildSnpediaGeneHints([user]));
     const entries = evidence.get(user.rsid.toLowerCase()) ?? [];
     return ambiguous
       ? entries.map((annotation) => ({

@@ -1,0 +1,37 @@
+{
+  "preparedAt": "2026-09-08T02:17:03Z",
+  "sourceRelease": "Gene validity CSV 2026-09-08",
+  "coverage": "Complete supplied ClinGen gene\u2013disease validity CSV rows with gene, HGNC, MONDO and curation identities. Includes limited, disputed and refuted classifications as well as stronger evidence. Gene context only; no personal disease or allele inference.",
+  "urls": [
+    "https://search.clinicalgenome.org/kb/gene-validity/download"
+  ],
+  "downloads": [
+    {
+      "url": "https://search.clinicalgenome.org/kb/gene-validity/download",
+      "fetchedAt": "2026-09-08T02:12:59Z"
+    }
+  ],
+  "inputs": [
+    {
+      "name": "clingen.csv",
+      "bytes": 1119885,
+      "sha256": "169cf92a9b5df4f4ef2d33006e2be5ac7a1c73660b473d2433deda5e7835a2fc"
+    }
+  ],
+  "selectionStats": {
+    "sourceRows": 3670,
+    "emittedAnnotations": 3670
+  },
+  "adapter": "tools/reference/curated.py",
+  "privacy": "Fixed public source snapshot only. No user-file, personal identifier, or genotype query.",
+  "assetCompression": {
+    "format": "gzip",
+    "level": 9,
+    "preparedAt": "2026-09-08T02:17:03Z",
+    "sourcePackVersion": "2026-09-08-curated-v1",
+    "sourceCatalogSha256": "f915bf391c9529d993c09389180a1fd9ffcf5a928cdf405d0afc32ca1e5acac9",
+    "pythonVersion": "3.14.7",
+    "zlibVersion": "1.2.12",
+    "verification": "Every input SQLite hash and every fully inflated output hash match the original manifest; encoded hashes recorded separately."
+  }
+}

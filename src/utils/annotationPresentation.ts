@@ -8,6 +8,12 @@ export const ANNOTATION_SOURCE_NAMES: Record<AnnotationSource, string> = {
   ensembl: "Ensembl VEP",
   clinpgx: "ClinPGx / PharmGKB",
   cpic: "CPIC",
+  clingen: "ClinGen",
+  orphanet: "Orphanet",
+  uniprot: "UniProt",
+  opentargets: "Open Targets",
+  panelapp: "PanelApp",
+  hpo: "Human Phenotype Ontology",
 };
 
 export const ANNOTATION_SOURCE_ORDER: AnnotationSource[] = [
@@ -18,6 +24,12 @@ export const ANNOTATION_SOURCE_ORDER: AnnotationSource[] = [
   "ensembl",
   "clinpgx",
   "cpic",
+  "clingen",
+  "orphanet",
+  "uniprot",
+  "opentargets",
+  "panelapp",
+  "hpo",
 ];
 
 /** Reference metadata is external data. Only explicit web URLs become links. */

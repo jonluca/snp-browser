@@ -11,6 +11,12 @@ export const ANNOTATION_SOURCES: AnnotationSource[] = [
   "ensembl",
   "clinpgx",
   "cpic",
+  "clingen",
+  "orphanet",
+  "uniprot",
+  "opentargets",
+  "panelapp",
+  "hpo",
 ];
 
 export function publicReferenceUrl(value: string, base: string): string {

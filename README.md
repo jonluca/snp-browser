@@ -16,13 +16,15 @@ The original data is originally based on a scrape from [https://github.com/jayko
 
 The SNP database is hosted at https://static.snpbrowser.com/snpedia.db
 
-Additional references are available from **Data sources**: ClinVar, dbSNP, gnomAD, GWAS Catalog, Ensembl VEP, ClinPGx/PharmGKB, and CPIC. Each download shows its actual coverage, release, size, and attribution. Some packs cover selected public variants or chromosomes; an absent annotation does not mean a variant is absent from the original source.
+Additional references are available from **Data sources**: ClinVar, dbSNP, gnomAD, GWAS Catalog, Ensembl VEP, ClinPGx/PharmGKB, CPIC, ClinGen, Orphanet, UniProt, Open Targets, and HPO. Each download shows its actual coverage, release, size, and attribution. Some packs cover selected public variants or chromosomes; an absent annotation does not mean a variant is absent from the original source.
 
 Reference packs are versioned, checksum-verified SQLite shards stored compressed in the browser Cache API. Downloads are explicit and contain whole public packs; searches and matching never send a person's variants to an annotation service. After downloading, queries expand one local shard at a time. Compression preserves every annotation and source field. Browser storage limits and eviction can require a fresh download.
 
 When replacing older uncompressed packs, reload the app and use **Data sources → Clear reference downloads** before downloading the new versions. This frees older cached files as well as current references, while retaining SNPedia and your open analysis. Select the sources you want to download again.
 
-See [reference preparation and publishing](docs/reference-data.md) for reproducible source adapters, coverage, source terms, and static deployment. Binary reference files are excluded from Git. The tracked `.env.production` configures production builds to request `https://static.snpbrowser.com/references/manifest.json` from R2, so they do not need or bundle local reference binaries. Development uses the local `/references/manifest.json` by default. When explicitly building with a local catalog, only its selected assets and provenance are copied.
+See [reference preparation and publishing](docs/reference-data.md) for reproducible source adapters, coverage, source terms, and static deployment. Binary reference files are excluded from Git. The tracked `.env.production` configures production builds to request `https://static.snpbrowser.com/references/manifest-v2.json` from R2, so they do not need or bundle local reference binaries. Development uses the local `/references/manifest-v2.json` by default. When explicitly building with a local catalog, only its selected assets and provenance are copied.
+
+The [browser workspace guide](docs/browser-workspace.md) explains the six evidence-backed **About you** trait suggestions, compact new source packs, and offline behavior. Production builds save public app files for offline use; personal DNA and findings stay in tab memory and must be reopened after a reload.
 
 ## Features
 
@@ -114,7 +116,7 @@ bun dev
 bun run prod
 ```
 
-For `bun dev`, [prepare local reference assets](docs/reference-data.md) or set `VITE_REFERENCE_MANIFEST_URL=https://static.snpbrowser.com/references/manifest.json` in an ignored `.env.development.local` file to use the public catalog. To build with prepared local assets instead, set `VITE_REFERENCE_MANIFEST_URL=/references/manifest.json` in `.env.production.local`. Restart development or rebuild production after changing these settings.
+For `bun dev`, [prepare local reference assets](docs/reference-data.md) or set `VITE_REFERENCE_MANIFEST_URL=https://static.snpbrowser.com/references/manifest-v2.json` in an ignored `.env.development.local` file to use the public catalog. To build with prepared local assets instead, set `VITE_REFERENCE_MANIFEST_URL=/references/manifest-v2.json` in `.env.production.local`. Restart development or rebuild production after changing these settings. The public R2 catalog permits the production domains and the standard localhost development/preview ports; use `http://localhost:5173` or `http://localhost:4173` for a public-catalog preview.
 
 ## Supported DNA File Formats
 

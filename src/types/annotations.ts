@@ -1,4 +1,17 @@
-export type AnnotationSource = "clinvar" | "dbsnp" | "gnomad" | "gwas" | "ensembl" | "clinpgx" | "cpic";
+export type AnnotationSource =
+  | "clinvar"
+  | "dbsnp"
+  | "gnomad"
+  | "gwas"
+  | "ensembl"
+  | "clinpgx"
+  | "cpic"
+  | "clingen"
+  | "orphanet"
+  | "uniprot"
+  | "opentargets"
+  | "panelapp"
+  | "hpo";
 export type GenomeAssembly = "GRCh37" | "GRCh38";
 
 export interface VariantAnnotation {

@@ -1,0 +1,5 @@
+HPO custom license: attribution, version and unchanged source content/relationships
+https://human-phenotype-ontology.github.io/license.html
+https://raw.githubusercontent.com/TheJacksonLaboratory/hpo-web/main/src/app/static/resources/license/license.component.html
+
+This service/product uses the Human Phenotype Ontology (v2026-09-01). Human Phenotype Ontology Consortium; Köhler et al., 2014, doi:10.1093/nar/gkt1026. Find out more at https://www.human-phenotype-ontology.org. Original source rows and logical relationships are preserved; the pack is a local index, not a modified ontology.

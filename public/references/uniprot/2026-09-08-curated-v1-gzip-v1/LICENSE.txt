@@ -1,0 +1,4 @@
+Creative Commons Attribution 4.0
+https://www.uniprot.org/help/license/
+
+UniProt Consortium, UniProtKB/Swiss-Prot humsavar. Converted to indexed rsID context; original protein feature identifiers, substitutions and source categories retained. Missing rsID rows are omitted and no genomic allele mapping is invented. No endorsement is implied.

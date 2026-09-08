@@ -1,0 +1,4 @@
+Creative Commons Attribution 4.0
+https://creativecommons.org/licenses/by/4.0/
+
+Orphadata Science: Free access data from Orphanet. © INSERM 1999. Available at https://sciences.orphadata.com/. XML data version is recorded in sourceRelease and provenance.json. Converted and indexed as gene context, retaining original relationship types, assessment status and references. No endorsement is implied.

@@ -3,6 +3,7 @@ import react, { reactCompilerPreset } from "@vitejs/plugin-react";
 import babel from "@rolldown/plugin-babel";
 import tailwindcss from "@tailwindcss/vite";
 import { referenceAssets } from "./tools/viteReferenceAssets";
+import { offlineApp } from "./tools/offlineApp";
 
 const dbProxy = {
   "/snpedia.db": {
@@ -13,7 +14,7 @@ const dbProxy = {
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react(), babel({ presets: [reactCompilerPreset()] }), tailwindcss(), referenceAssets()],
+  plugins: [react(), babel({ presets: [reactCompilerPreset()] }), tailwindcss(), referenceAssets(), offlineApp()],
   build: { copyPublicDir: false },
   worker: { format: "es" },
   server: {

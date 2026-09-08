@@ -2,6 +2,7 @@ import type { Database } from "sql.js";
 import type {
   AnnotationEvidence,
   AnnotationMatchSummary,
+  AnnotationSource,
   ReferenceDownloadProgress,
   ReferenceManifest,
   ReferencePack,
@@ -59,8 +60,14 @@ const locationKey = (location: ReferenceLocation) => `${location.assembly}:${loc
 const geneSymbols = (value: string) =>
   value
     .split(/[,;|]|\s+-\s+/)
-    .map((gene) => gene.trim())
-    .filter((gene) => /^[A-Za-z][A-Za-z0-9.-]*$/.test(gene));
+    .map((gene) => gene.trim().toUpperCase())
+    .filter((gene) => /^[A-Z][A-Z0-9.-]*@?$/.test(gene));
+const GENE_CONTEXT_SOURCES = new Set<AnnotationSource>(["cpic", "clinpgx", "clingen", "orphanet", "panelapp", "hpo"]);
+const geneContextReason = (source: AnnotationSource) =>
+  source === "cpic" || source === "clinpgx"
+    ? "Gene-level reference evidence. A drug-response phenotype has not been inferred from this variant."
+    : "Gene-level reference evidence. A variant in this gene does not establish an associated condition or phenotype.";
+const hintKey = (value: string) => normalizeRsid(value) ?? value.trim().toLowerCase();
 function callSignature(user: UserGenotype): string {
   const complements: Record<string, string> = { A: "T", T: "A", C: "G", G: "C" };
   const orient = (value: string) =>
@@ -191,7 +198,19 @@ export class ReferenceStore {
       const settingsUrl = new URL(manifestUrl);
       settingsUrl.searchParams.set("__reference_settings", "enabled-packs");
       const saved = await cache.match(settingsUrl.href);
-      const enabled: unknown = saved ? await saved.json().catch(() => []) : [];
+      let enabled: unknown = saved ? await saved.json().catch(() => []) : [];
+      if (!saved && /\/manifest-v2\.json$/.test(settingsUrl.pathname)) {
+        const previousUrl = new URL(settingsUrl);
+        previousUrl.pathname = previousUrl.pathname.replace(/\/manifest-v2\.json$/, "/manifest.json");
+        const previous = await cache.match(previousUrl.href);
+        const previousEnabled: unknown = previous?.ok ? await previous.json().catch(() => null) : null;
+        // A newer tab may have saved v2 choices while the legacy entry was read.
+        // Keep this fallback read-only so it cannot overwrite those preferences.
+        const current = await cache.match(settingsUrl.href);
+        if (current) enabled = await current.json().catch(() => []);
+        else if (Array.isArray(previousEnabled) && previousEnabled.every((item) => typeof item === "string"))
+          enabled = previousEnabled;
+      }
       const selected = new Set(Array.isArray(enabled) ? enabled.filter((item) => typeof item === "string") : []);
       const states = new Map<string, ReferencePackState>();
       for (const pack of manifest.packs) {
@@ -531,6 +550,7 @@ export class ReferenceStore {
     genotypes: UserGenotype[],
     onProgress: (current: number, total: number) => void,
     summaryOnly = false,
+    geneHints?: Map<string, string[]>,
   ): Promise<{ evidence: Map<string, AnnotationEvidence[]>; summaries: Map<string, AnnotationMatchSummary> }> {
     return this.serialize(async () => {
       const packs = this.enabledPacks();
@@ -543,12 +563,25 @@ export class ReferenceStore {
       const canonicalUsers = new Map<string, IndexedUsers>();
       const byLocation = new Map<string, IndexedUsers>();
       const genes = new Map<string, Set<string>>();
+      const hintsById = new Map<string, string[]>();
+      for (const [id, symbols] of geneHints ?? []) {
+        const key = hintKey(id);
+        hintsById.set(key, [...(hintsById.get(key) ?? []), ...symbols.flatMap(geneSymbols)]);
+      }
       for (const user of genotypes) {
         const rsid = user.rsid.toLowerCase();
         indexUser(canonicalUsers, aliases.get(rsid) ?? rsid, user);
         const location = referenceLocation(user);
         if (location) indexUser(byLocation, `l:${locationKey(location)}`, user);
+        // Public SNPedia gene hints are usable only for a call actually present
+        // in this input. They establish gene context, never an allele match.
+        for (const gene of hintsById.size ? (hintsById.get(hintKey(user.rsid)) ?? []) : []) {
+          const variants = genes.get(gene) ?? new Set<string>();
+          variants.add(user.rsid);
+          genes.set(gene, variants);
+        }
       }
+      hintsById.clear();
       const candidateKeys = matchingKeys(canonicalUsers, byLocation);
       // Both complete indexes must be checked before the first annotation is
       // added, including conflicting calls far apart in the uploaded file.
@@ -575,7 +608,7 @@ export class ReferenceStore {
         }
       };
       let completed = 0;
-      const genePacks = packs.filter((pack) => pack.source === "cpic" || pack.source === "clinpgx");
+      const genePacks = packs.filter((pack) => GENE_CONTEXT_SOURCES.has(pack.source));
       const total = [...packs, ...genePacks].reduce((sum, pack) => sum + pack.shards.length, 0);
       for (const pack of packs) {
         await this.scan(
@@ -609,15 +642,20 @@ export class ReferenceStore {
                 else if (group) users.add(group);
               }
               for (const user of users) {
-                const identity = ambiguous.has(user.rsid.toLowerCase())
-                  ? {
-                      matchType: "unresolved" as const,
-                      matchReason: "This file contains conflicting calls or coordinates for the same variant.",
-                    }
-                  : matchVariantAnnotation(
-                      { ...user, rsid: aliases.get(user.rsid.toLowerCase()) ?? user.rsid },
-                      annotation,
-                    );
+                const identity =
+                  annotation.scope === "gene" &&
+                  GENE_CONTEXT_SOURCES.has(pack.source) &&
+                  GENE_CONTEXT_SOURCES.has(annotation.source)
+                    ? { matchType: "gene" as const, matchReason: geneContextReason(annotation.source) }
+                    : ambiguous.has(user.rsid.toLowerCase())
+                      ? {
+                          matchType: "unresolved" as const,
+                          matchReason: "This file contains conflicting calls or coordinates for the same variant.",
+                        }
+                      : matchVariantAnnotation(
+                          { ...user, rsid: aliases.get(user.rsid.toLowerCase()) ?? user.rsid },
+                          annotation,
+                        );
                 add(user.rsid, {
                   ...annotation,
                   fields: {
@@ -651,6 +689,7 @@ export class ReferenceStore {
               database,
               filterReferenceKeys(shard, geneKeys).map((key) => key.slice(2)),
             )) {
+              if (annotation.scope !== "gene" || !GENE_CONTEXT_SOURCES.has(annotation.source)) continue;
               const relatedVariants = new Set(
                 geneSymbols(annotation.gene ?? "").flatMap((gene) => [...(genes.get(gene.toUpperCase()) ?? [])]),
               );
@@ -664,8 +703,7 @@ export class ReferenceStore {
                     upstreamRelease: pack.sourceRelease ?? null,
                   },
                   matchType: "gene",
-                  matchReason:
-                    "Gene-level reference evidence. A drug-response phenotype has not been inferred from this variant.",
+                  matchReason: geneContextReason(annotation.source),
                 });
               }
             }
@@ -703,7 +741,10 @@ export class ReferenceStore {
         result.push({
           ...annotation,
           matchType: annotation.scope === "gene" ? "gene" : "locus",
-          matchReason: "Reference information; no uploaded genotype is being interpreted here.",
+          matchReason:
+            annotation.scope === "gene"
+              ? geneContextReason(annotation.source)
+              : "Reference information; no uploaded genotype is being interpreted here.",
         });
       };
       for (const pack of packs) {
@@ -730,11 +771,12 @@ export class ReferenceStore {
         );
       }
       const geneKeys = prepareReferenceKeys(referenceLookupKeys(undefined, undefined, [...genes]));
-      for (const pack of packs.filter((pack) => pack.source === "clinpgx" || pack.source === "cpic")) {
+      for (const pack of packs.filter((pack) => GENE_CONTEXT_SOURCES.has(pack.source))) {
         await this.scan(
           pack,
           (database) =>
-            lookupReferenceGenes(database, [...genes]).forEach((annotation) =>
+            lookupReferenceGenes(database, [...genes]).forEach((annotation) => {
+              if (annotation.scope !== "gene" || !GENE_CONTEXT_SOURCES.has(annotation.source)) return;
               add({
                 ...annotation,
                 fields: {
@@ -743,8 +785,8 @@ export class ReferenceStore {
                   referenceBuiltAt: pack.builtAt,
                   upstreamRelease: pack.sourceRelease ?? null,
                 },
-              }),
-            ),
+              });
+            }),
           geneKeys,
         );
       }

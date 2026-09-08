@@ -1,0 +1,93 @@
+{
+  "preparedAt": "2026-09-08T02:24:37Z",
+  "sourceRelease": "v2026-09-01; HPOA 2026-09-02",
+  "coverage": "Complete supplied genes_to_disease and genes_to_phenotype tables, grouped by NCBI gene and disease ID. All phenotype.hpoa rows for those exact diseases are attached unchanged, including NOT, frequency, onset, sex, evidence and inheritance. Diseases with no source gene mapping are counted in provenance but cannot produce gene matches. No ontology ancestor expansion, MONDO merge, genomic allele inference or personal phenotype prediction.",
+  "urls": [
+    "https://github.com/obophenotype/human-phenotype-ontology/releases/download/v2026-09-01/genes_to_disease.txt",
+    "https://github.com/obophenotype/human-phenotype-ontology/releases/download/v2026-09-01/genes_to_phenotype.txt",
+    "https://github.com/obophenotype/human-phenotype-ontology/releases/download/v2026-09-01/phenotype.hpoa",
+    "https://github.com/obophenotype/human-phenotype-ontology/releases/download/v2026-09-01/hp.obo"
+  ],
+  "downloads": [
+    {
+      "url": "https://github.com/obophenotype/human-phenotype-ontology/releases/download/v2026-09-01/genes_to_disease.txt",
+      "fetchedAt": "2026-09-08T02:21:04Z",
+      "bytes": 1492039,
+      "sha256": "7937a1b92779dc8614e39ace623b443c7c71dd15e4de11d5e52b14e331ab5978",
+      "githubAssetDigest": "sha256:7937a1b92779dc8614e39ace623b443c7c71dd15e4de11d5e52b14e331ab5978"
+    },
+    {
+      "url": "https://github.com/obophenotype/human-phenotype-ontology/releases/download/v2026-09-01/genes_to_phenotype.txt",
+      "fetchedAt": "2026-09-08T02:21:05Z",
+      "bytes": 20821704,
+      "sha256": "507a17bff9c49e6329fbd88b1f91734fa7e9fdea5c06304044c0892eb6ab248c",
+      "githubAssetDigest": "sha256:507a17bff9c49e6329fbd88b1f91734fa7e9fdea5c06304044c0892eb6ab248c"
+    },
+    {
+      "url": "https://github.com/obophenotype/human-phenotype-ontology/releases/download/v2026-09-01/phenotype.hpoa",
+      "fetchedAt": "2026-09-08T02:21:07Z",
+      "bytes": 35816037,
+      "sha256": "e89aa39c8f97bf5a52c5d160f9250a603681d630ade8ec2679d84ac5aece1f72",
+      "githubAssetDigest": "sha256:e89aa39c8f97bf5a52c5d160f9250a603681d630ade8ec2679d84ac5aece1f72"
+    },
+    {
+      "url": "https://github.com/obophenotype/human-phenotype-ontology/releases/download/v2026-09-01/hp.obo",
+      "fetchedAt": "2026-09-08T02:22:13Z",
+      "bytes": 10863613,
+      "sha256": "93dace952fcb3ec4728818857f6ba76bc2d5312f4d83266519b8694b8e798f22",
+      "githubAssetDigest": "sha256:93dace952fcb3ec4728818857f6ba76bc2d5312f4d83266519b8694b8e798f22"
+    }
+  ],
+  "inputs": [
+    {
+      "name": "genes_to_disease.txt",
+      "bytes": 1492039,
+      "sha256": "7937a1b92779dc8614e39ace623b443c7c71dd15e4de11d5e52b14e331ab5978"
+    },
+    {
+      "name": "genes_to_phenotype.txt",
+      "bytes": 20821704,
+      "sha256": "507a17bff9c49e6329fbd88b1f91734fa7e9fdea5c06304044c0892eb6ab248c"
+    },
+    {
+      "name": "phenotype.hpoa",
+      "bytes": 35816037,
+      "sha256": "e89aa39c8f97bf5a52c5d160f9250a603681d630ade8ec2679d84ac5aece1f72"
+    },
+    {
+      "name": "hp.obo",
+      "bytes": 10863613,
+      "sha256": "93dace952fcb3ec4728818857f6ba76bc2d5312f4d83266519b8694b8e798f22"
+    }
+  ],
+  "selectionStats": {
+    "geneMappingSourceRows": 16099,
+    "genePhenotypeSourceRows": 333983,
+    "diseaseAnnotationSourceRows": 286651,
+    "sourceNegatedRows": 733,
+    "diseaseRowsWithoutGeneMapping": 62210,
+    "emittedGeneDiseaseRecords": 16098,
+    "retainedGeneMappingRows": 16099,
+    "retainedGenePhenotypeRows": 333983,
+    "attachedDiseaseAnnotationRows": 334631,
+    "attachedNegatedRows": 826,
+    "geneDiseaseRecordsWithoutPhenotypeAnnotations": 3425,
+    "recordsWithoutSuppliedGeneSymbol": 10
+  },
+  "licenseSources": [
+    "https://human-phenotype-ontology.github.io/license.html",
+    "https://raw.githubusercontent.com/TheJacksonLaboratory/hpo-web/main/src/app/static/resources/license/license.component.html"
+  ],
+  "adapter": "tools/reference/phenotypes.py",
+  "privacy": "Fixed public release inputs only; no personal DNA or phenotype queries.",
+  "assetCompression": {
+    "format": "gzip",
+    "level": 9,
+    "preparedAt": "2026-09-08T02:24:37Z",
+    "sourcePackVersion": "2026-09-08-hpo-v1",
+    "sourceCatalogSha256": "b8d3800f165b2c60ff656f5c492a3d5ec19528715ba9f32161f52d93f7ade76e",
+    "pythonVersion": "3.14.7",
+    "zlibVersion": "1.2.12",
+    "verification": "Every input SQLite hash and every fully inflated output hash match the original manifest; encoded hashes recorded separately."
+  }
+}

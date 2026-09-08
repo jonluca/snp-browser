@@ -6,4 +6,4 @@ const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.h
 export const DB_URL = isLocalHost ? LOCAL_DB_PROXY_URL : REMOTE_DB_URL;
 
 // The catalog contains only public reference asset URLs, never uploaded variant IDs.
-export const REFERENCE_MANIFEST_URL = import.meta.env.VITE_REFERENCE_MANIFEST_URL || "/references/manifest.json";
+export const REFERENCE_MANIFEST_URL = import.meta.env.VITE_REFERENCE_MANIFEST_URL || "/references/manifest-v2.json";
