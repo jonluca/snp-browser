@@ -537,3 +537,115 @@ test("noncanonical contigs retain exact names and safe coordinate IDs without in
   ]);
   expect(result.warnings).toHaveLength(1);
 });
+
+const singleSampleHeader = [
+  "##fileformat=VCFv4.5",
+  "##reference=GRCh38",
+  "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE",
+].join("\n");
+
+const parseVcfSources = [
+  (content: string) => parserVCF.parse(content, () => {}),
+  (content: string) => parserVCF.parseBlob(new File([content], "input.vcf"), () => {}),
+  (content: string) => parserVCF.parseBlob(new File([gzipSync(content)], "input.vcf.gz"), () => {}),
+  (content: string) => {
+    const chunks: Uint8Array[] = [];
+    for (let offset = 0; offset < content.length; offset += 16000) {
+      chunks.push(createBgzfBlock(content.slice(offset, offset + 16000)));
+    }
+    chunks.push(createBgzfBlock(""));
+    return parserVCF.parseBlob(new File([concatBytes(chunks)], "input.bgzf.vcf.gz"), () => {});
+  },
+];
+
+test("VCF text, streaming, gzip and BGZF reject multiple samples instead of choosing the first person", async () => {
+  const content = `${singleSampleHeader}\tUPLOADER\n1\t100\trs123\tA\tG\t99\tPASS\t.\tGT\t1/1\t0/0\n`;
+  for (const parse of parseVcfSources) {
+    await expect(parse(content)).rejects.toThrow("Line 3: This VCF contains multiple samples");
+  }
+});
+
+test("late extra sample columns or repeated headers reject the whole VCF rather than returning earlier calls", async () => {
+  // Put the invalid line beyond a normal text chunk, and omit the final newline.
+  const prefix = `${singleSampleHeader}\n${"1\t100\trs123\tA\tG\t99\tPASS\t.\tGT\t0/1\n".repeat(3000)}`;
+  const extraSample = "1\t101\trs124\tA\tG\t0\tLowQual\t.\tGT\t1/1\t0/0";
+  const repeatedHeader = singleSampleHeader.split("\n")[2];
+  for (const suffix of [
+    extraSample,
+    repeatedHeader,
+    `${repeatedHeader}\tOTHER`,
+    repeatedHeader.replace("SAMPLE", "OTHER"),
+  ]) {
+    for (const parse of parseVcfSources) {
+      await expect(parse(prefix + suffix)).rejects.toThrow("single-sample VCF");
+    }
+  }
+});
+
+test("fatal VCF rejection cancels the remaining input stream", async () => {
+  let cancelled = false;
+  const file = new File([singleSampleHeader], "input.vcf");
+  Object.defineProperty(file, "stream", {
+    value: () =>
+      new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`${singleSampleHeader}\tOTHER\n`));
+          // The rest of the input deliberately remains open until cancellation.
+        },
+        cancel() {
+          cancelled = true;
+        },
+      }),
+  });
+  await expect(parserVCF.parseBlob(file, () => {})).rejects.toThrow("multiple samples");
+  expect(cancelled).toBe(true);
+});
+
+test("failed VCF site or sample filters are excluded with a counted import notice in every input path", async () => {
+  const content = [
+    singleSampleHeader,
+    "1\t100\trs100\tA\tG\t99\tLowQual\t.\tGT:FT:GQ\t1/1:PASS:99",
+    "1\t101\trs101\tA\tG\t99\tPASS\t.\tGT:FT:GQ\t1/1:LowDepth:99",
+    "1\t102\trs102\tA\tG\t99\tPASS\t.\tFT:GQ:GT\tPASS;LowDepth:99:1/1",
+    "1\t103\trs103\tA\tG\t0\tLowQual;LowDepth\t.\tGT:FT:GQ\t1/1:FAIL:0",
+    "1\t104\trs104\tA\tG\t0\tPASS\t.\tGT:FT:GQ\t0/1:PASS:0",
+  ].join("\n");
+  for (const parse of parseVcfSources) {
+    const result = await parse(content);
+    expect(result.genotypes.map((call) => call.rsid)).toEqual(["rs104"]);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([
+      "4 calls failed a VCF site (FILTER) or sample (FT) quality filter and were excluded from analysis.",
+    ]);
+    expect(result.skippedLines).toBe(7);
+  }
+});
+
+test("PASS, unapplied and absent filters preserve calls without inventing numeric QUAL or GQ cutoffs", async () => {
+  const content = [
+    singleSampleHeader,
+    "1\t100\trs100\tA\tG\t0\tPASS\t.\tGT:FT:GQ\t0/1:PASS:0",
+    "1\t101\trs101\tA\tG\t0\t.\t.\tGT:FT:GQ\t0/1:.:0",
+    "1\t102\trs102\tA\tG\t.\t.\t.\tGT\t0/1",
+    "1\t103\trs103\tA\tG\t0\tPASS\t.\tGT:GQ:FT\t0/1:0",
+    "1\t104\trs104\tA\tG\t0\t\t.\tGT:FT:GQ\t0/1::0",
+  ].join("\n");
+  for (const parse of parseVcfSources) {
+    const result = await parse(content);
+    expect(result.genotypes.map((call) => call.rsid)).toEqual(["rs100", "rs101", "rs102", "rs103", "rs104"]);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toBeUndefined();
+  }
+});
+
+test("VCFs containing only failed quality calls retain the exclusion reason and no personal calls", async () => {
+  const content = `${singleSampleHeader}\n1\t100\trs123\tA\tG\t0\tLowQual\t.\tGT:FT:GQ\t1/1:FAIL:0`;
+  for (const parse of parseVcfSources) {
+    const result = await parse(content);
+    expect(result.genotypes).toEqual([]);
+    expect(result.errors).toEqual([]);
+    expect(result.warnings).toEqual([
+      "1 calls failed a VCF site (FILTER) or sample (FT) quality filter and were excluded from analysis.",
+    ]);
+  }
+});

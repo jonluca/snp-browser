@@ -71,6 +71,8 @@ export interface ParsedSNPData {
 
 // User's genotype matched with database info
 export interface MatchedSNP extends UserGenotype {
+  /** Conflicting uploaded calls or loci, even when no reference pack covers them. */
+  ambiguous?: boolean;
   annotationSummary?: import("./annotations").AnnotationMatchSummary;
   annotations?: import("./annotations").AnnotationEvidence[];
   snpData: SNPRecord;

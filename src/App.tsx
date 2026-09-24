@@ -178,6 +178,7 @@ function App() {
           setMatchError(
             new Error(
               result.errors[0] ||
+                result.warnings?.join(" ") ||
                 (result.detectedFormat === "vcf"
                   ? "No supported genotype calls were found in this VCF/gVCF. Calls need an rsID, or an explicit GRCh37/GRCh38 build and valid coordinates. Reference blocks and symbolic alleles do not specify a concrete called sequence."
                   : "No valid genotype data found in file"),

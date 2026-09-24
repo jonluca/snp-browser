@@ -249,3 +249,46 @@ test("source rows with the same ID and different content remain distinct", async
   expect(new Set(matches.map((match) => match.genotypeData?.id)).size).toBe(1);
   expect(new Set(matches.map((match) => match.genotypeData?.content)).size).toBe(2);
 });
+
+for (const acrossBatches of [false, true]) {
+  test(`conflicting SNPedia-only calls retain generic context without personal genotype evidence (${acrossBatches ? "across batches" : "same batch"})`, async () => {
+    const database = fixture("rs123", "A;G", "{{Rsnum|Orientation=plus|summary=General variant context}}");
+    database.run("UPDATE genotypes SET content = ?", ["{{Genotype|magnitude=4|summary=Personal genotype claim}}"]);
+    const first: UserGenotype = {
+      ...userGenotype("ag"),
+      assembly: "GRCh37",
+      strand: "plus",
+    };
+    // The conflicting call need not have a matching genotype article.
+    const second: UserGenotype = { ...first, genotype: "gg" };
+    const users = separatedCalls(first, second, acrossBatches);
+    const matches = await matchSNPsInBatches(database, columns, users, () => {});
+    expect(matches).toHaveLength(2);
+    for (const match of matches) {
+      expect(match.ambiguous).toBe(true);
+      expect(match.genotypeData).toBeUndefined();
+      expect(match.parsedData.genotypeContent).toBeUndefined();
+      expect(match.parsedData.summary).toBe("General variant context");
+    }
+    expect(matches.map((match) => match.genotype).sort()).toEqual(["ag", "gg"]);
+  });
+}
+
+test("different uploaded IDs at the same conflicting locus cannot receive SNPedia genotype evidence", async () => {
+  const database = fixture("rs123", "A;G", "{{Rsnum|Orientation=plus}}");
+  database.run("INSERT INTO snps VALUES (?, ?, NULL)", ["rs456", "{{Rsnum|Orientation=plus}}"]);
+  const first: UserGenotype = { ...userGenotype("ag"), assembly: "GRCh37", strand: "plus" };
+  const second = { ...first, rsid: "rs456", genotype: "gg" };
+  const matches = await matchSNPsInBatches(database, columns, [first, second], () => {});
+  expect(matches).toHaveLength(2);
+  expect(matches.every((match) => match.ambiguous && !match.genotypeData)).toBe(true);
+});
+
+test("equivalent SNP calls retain genotype evidence after upload conflict checking", async () => {
+  const database = fixture("rs123", "A;G", "{{Rsnum|Orientation=plus}}");
+  const first: UserGenotype = { ...userGenotype("ag"), assembly: "GRCh37", strand: "plus", ref: "A" };
+  const users = [first, { ...first, genotype: "ga" }, { ...first, genotype: "ct", ref: "T", strand: "minus" as const }];
+  const matches = await matchSNPsInBatches(database, columns, users, () => {});
+  expect(matches).toHaveLength(3);
+  expect(matches.every((match) => !match.ambiguous && match.genotypeData?.genotype === "ag")).toBe(true);
+});

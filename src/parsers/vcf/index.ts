@@ -176,31 +176,36 @@ export class ParserVCF implements DNAParser {
     const decoder = new TextDecoder();
     let bufferedText = "";
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      const text = decoder.decode(value, { stream: true });
-      const lines = (bufferedText + text).split(/\r?\n/);
-      bufferedText = lines.pop() ?? "";
+        const text = decoder.decode(value, { stream: true });
+        const lines = (bufferedText + text).split(/\r?\n/);
+        bufferedText = lines.pop() ?? "";
 
-      for (const line of lines) {
-        state.totalLines++;
-        this.processLine(line, state.totalLines, state);
+        for (const line of lines) {
+          state.totalLines++;
+          this.processLine(line, state.totalLines, state);
+        }
+
+        onProgress(Math.min(bytesRead, totalBytes), totalBytes);
       }
 
-      onProgress(Math.min(bytesRead, totalBytes), totalBytes);
+      const finalText = bufferedText + decoder.decode();
+      if (finalText) {
+        state.totalLines++;
+        this.processLine(finalText, state.totalLines, state);
+      }
+
+      onProgress(totalBytes, totalBytes);
+
+      return this.finishParse(state);
+    } finally {
+      await reader.cancel().catch(() => undefined);
+      reader.releaseLock();
     }
-
-    const finalText = bufferedText + decoder.decode();
-    if (finalText) {
-      state.totalLines++;
-      this.processLine(finalText, state.totalLines, state);
-    }
-
-    onProgress(totalBytes, totalBytes);
-
-    return this.finishParse(state);
   }
 
   private createParseState(totalLines: number): VcfParseState {
@@ -312,6 +317,7 @@ export class ParserVCF implements DNAParser {
         }
       }
     } finally {
+      await reader.cancel().catch(() => undefined);
       reader.releaseLock();
     }
   }
@@ -460,6 +466,12 @@ export class ParserVCF implements DNAParser {
 
     if (line.startsWith("#CHROM")) {
       const parts = this.splitColumns(line);
+      this.rejectAdditionalSamples(parts, lineNumber);
+      if (state.headerFound) {
+        throw new Error(
+          `Line ${lineNumber}: This VCF contains more than one #CHROM header. Upload a single-sample VCF with one header.`,
+        );
+      }
       state.fileMetadata = detectFileMetadata(state.metadataLines.join("\n"), true);
       state.headerFound = true;
       state.skippedLines++;
@@ -476,6 +488,7 @@ export class ParserVCF implements DNAParser {
     }
 
     const parts = this.splitColumns(line);
+    this.rejectAdditionalSamples(parts, lineNumber);
     if (parts.length < 8) {
       state.errors.push(`Line ${lineNumber}: Invalid VCF record - expected at least 8 columns, got ${parts.length}`);
       state.skippedLines++;
@@ -485,6 +498,16 @@ export class ParserVCF implements DNAParser {
     if (!state.headerFound) {
       state.errors.push(`Line ${lineNumber}: VCF data record appeared before #CHROM header`);
       state.skippedLines++;
+      return;
+    }
+
+    const sampleFilterIndex = parts[8]?.split(":").indexOf("FT") ?? -1;
+    const sampleFilter = sampleFilterIndex >= 0 ? parts[9]?.split(":")[sampleFilterIndex] : undefined;
+    if (this.hasFailedQualityFilter(parts[6]) || this.hasFailedQualityFilter(sampleFilter)) {
+      this.skipRecord(
+        state,
+        "calls failed a VCF site (FILTER) or sample (FT) quality filter and were excluded from analysis.",
+      );
       return;
     }
 
@@ -559,6 +582,25 @@ export class ParserVCF implements DNAParser {
   private splitColumns(line: string): string[] {
     const tabParts = line.split("\t");
     return tabParts.length > 1 ? tabParts : line.split(/\s+/);
+  }
+
+  private rejectAdditionalSamples(parts: string[], lineNumber: number): void {
+    if (parts.length > 10) {
+      throw new Error(
+        `Line ${lineNumber}: This VCF contains multiple samples. Extract a single-sample VCF for the person you want to analyze and upload it again.`,
+      );
+    }
+  }
+
+  private hasFailedQualityFilter(filter: string | undefined): boolean {
+    // Missing/unapplied filters do not establish failure. Numeric QUAL/GQ
+    // thresholds are caller-specific and are not inferred by this importer.
+    return (
+      filter?.split(";").some((value) => {
+        const flag = value.trim();
+        return flag !== "" && flag !== "." && flag !== "PASS";
+      }) ?? false
+    );
   }
 
   private extractRsid(id: string): string | null {

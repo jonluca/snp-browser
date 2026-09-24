@@ -11,6 +11,7 @@ import type {
   VariantAnnotation,
 } from "../types/annotations";
 import type { UserGenotype } from "../types/snp";
+import { ambiguousUsers, indexUser, type IndexedUsers } from "../utils/callAmbiguity";
 import { MAX_REFERENCE_EXPORT_ROWS, type SNPSearchFilters } from "./snpSearch";
 import {
   matchVariantAnnotation,
@@ -68,69 +69,26 @@ const geneContextReason = (source: AnnotationSource) =>
     ? "Gene-level reference evidence. A drug-response phenotype has not been inferred from this variant."
     : "Gene-level reference evidence. A variant in this gene does not establish an associated condition or phenotype.";
 const hintKey = (value: string) => normalizeRsid(value) ?? value.trim().toLowerCase();
-function callSignature(user: UserGenotype): string {
-  const complements: Record<string, string> = { A: "T", T: "A", C: "G", G: "C" };
-  const orient = (value: string) =>
-    value
-      .toUpperCase()
-      .split("")
-      .map((base) => (user.strand === "minus" ? (complements[base] ?? base) : base))
-      .join("");
-  return JSON.stringify([
-    normalizeAssembly(user.assembly),
-    normalizeChromosome(user.chromosome),
-    normalizePosition(user.position),
-    user.alleles
-      ? user.alleles.map((allele) => orient(allele)).sort()
-      : /[/|]/.test(user.genotype)
-        ? user.genotype.split(/[/|]/).map(orient).sort()
-        : orient(user.genotype).split("").sort().join(""),
-    user.ref ? orient(user.ref) : undefined,
-    user.alleles && user.strand === "minus"
-      ? "minus"
-      : user.strand === "plus" || user.strand === "minus"
-        ? "plus"
-        : "unknown",
-  ]);
-}
-
-type IndexedUsers = UserGenotype | UserGenotype[];
-
-function indexUser(index: Map<string, IndexedUsers>, key: string, user: UserGenotype): void {
-  const existing = index.get(key);
-  if (!existing) index.set(key, user);
-  else if (Array.isArray(existing)) existing.push(user);
-  else index.set(key, [existing, user]);
-}
 
 function matchingKeys(
   canonicalUsers: Map<string, IndexedUsers>,
   byLocation: Map<string, IndexedUsers>,
+  originalAliases: Iterable<string>,
 ): PreparedReferenceKeys {
   const keys: string[] = [];
   for (const id of canonicalUsers.keys()) {
     const rsid = normalizeRsid(id);
     if (rsid) keys.push(`r:${rsid}`);
   }
+  // A source release can still use an uploaded identifier that dbSNP merged.
+  // Retain those lookup keys without duplicating the genome's user index.
+  for (const alias of originalAliases) {
+    const rsid = normalizeRsid(alias);
+    if (rsid && !canonicalUsers.has(rsid)) keys.push(`r:${rsid}`);
+  }
   // The locus index already owns these strings; reuse them for shard routing.
   for (const key of byLocation.keys()) keys.push(key);
   return prepareReferenceKeys(keys);
-}
-
-function ambiguousUsers(...indexes: Map<string, IndexedUsers>[]): Set<string> {
-  const ambiguous = new Set<string>();
-  for (const index of indexes) {
-    for (const users of index.values()) {
-      if (!Array.isArray(users)) continue;
-      const signature = callSignature(users[0]);
-      for (let position = 1; position < users.length; position++) {
-        if (callSignature(users[position]) === signature) continue;
-        for (const user of users) ambiguous.add(user.rsid.toLowerCase());
-        break;
-      }
-    }
-  }
-  return ambiguous;
 }
 
 export class ReferenceStore {
@@ -582,7 +540,7 @@ export class ReferenceStore {
         }
       }
       hintsById.clear();
-      const candidateKeys = matchingKeys(canonicalUsers, byLocation);
+      const candidateKeys = matchingKeys(canonicalUsers, byLocation, aliases.keys());
       // Both complete indexes must be checked before the first annotation is
       // added, including conflicting calls far apart in the uploaded file.
       const ambiguous = ambiguousUsers(canonicalUsers, byLocation);
@@ -633,9 +591,11 @@ export class ReferenceStore {
             );
             for (const annotation of found.values()) {
               const locus = referenceLocation(annotation);
+              const annotationRsid = annotation.rsid?.toLowerCase() ?? "";
+              const canonicalAnnotationRsid = aliases.get(annotationRsid) ?? annotationRsid;
               const users = new Set<UserGenotype>();
               for (const group of [
-                canonicalUsers.get(annotation.rsid?.toLowerCase() ?? ""),
+                canonicalUsers.get(canonicalAnnotationRsid),
                 locus ? byLocation.get(`l:${locationKey(locus)}`) : undefined,
               ]) {
                 if (Array.isArray(group)) for (const user of group) users.add(user);
@@ -654,7 +614,9 @@ export class ReferenceStore {
                         }
                       : matchVariantAnnotation(
                           { ...user, rsid: aliases.get(user.rsid.toLowerCase()) ?? user.rsid },
-                          annotation,
+                          // Normalize only for identity comparison; source evidence
+                          // below retains its original identifier and provenance.
+                          { ...annotation, rsid: canonicalAnnotationRsid || undefined },
                         );
                 add(user.rsid, {
                   ...annotation,
@@ -724,16 +686,21 @@ export class ReferenceStore {
       const seen = new Set<string>();
       const packs = this.enabledPacks();
       let canonical = rsid.toLowerCase();
+      const identifiers = new Set([canonical]);
       for (const pack of packs.filter((pack) => pack.source === "dbsnp")) {
         await this.scan(
           pack,
           (database) => {
             canonical = lookupReferenceAliases(database, [canonical]).get(canonical) ?? canonical;
+            identifiers.add(canonical);
           },
           prepareReferenceKeys(referenceLookupKeys(canonical)),
         );
       }
-      const candidateKeys = prepareReferenceKeys(referenceLookupKeys(canonical, location));
+      const candidateKeys = prepareReferenceKeys([
+        ...[...identifiers].flatMap((id) => referenceLookupKeys(id)),
+        ...referenceLookupKeys(undefined, location),
+      ]);
       const add = (annotation: VariantAnnotation) => {
         const key = `${annotation.source}:${annotation.id}`;
         if (seen.has(key)) return;
@@ -752,7 +719,7 @@ export class ReferenceStore {
           pack,
           (database) => {
             for (const annotation of [
-              ...lookupReferenceAnnotations(database, [canonical]),
+              ...lookupReferenceAnnotations(database, [...identifiers]),
               ...lookupReferenceCoordinates(database, location ? [location] : []),
             ]) {
               add({

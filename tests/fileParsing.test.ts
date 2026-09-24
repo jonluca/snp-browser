@@ -238,3 +238,38 @@ test("a generic gzip file is detected as VCF from its decompressed header", asyn
     parseFileBlobWithDetection(new File([gzipSync("Unrelated document")], "document.gz"), () => {}),
   ).rejects.toThrow("Could not detect file format");
 });
+
+test("multi-sample VCF rejection survives automatic detection, explicit selection and ZIP extraction", async () => {
+  const content =
+    "##fileformat=VCFv4.5\n##reference=GRCh38\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tOTHER_PERSON\tUPLOADER\n" +
+    "1\t100\trs123\tA\tG\t99\tPASS\t.\tGT\t1/1\t0/0\n";
+  for (const parserId of [undefined, "vcf"]) {
+    await expect(parseFileWithDetection(content, () => {}, parserId)).rejects.toThrow("multiple samples");
+    for (const file of [
+      new File([content], "input.vcf"),
+      new File([gzipSync(content)], "input.gz"),
+      storedZip("input.vcf", content),
+      archive([{ filename: "input.gz", content: gzipSync(content) }]),
+    ]) {
+      await expect(parseFileBlobWithDetection(file, () => {}, parserId)).rejects.toThrow("multiple samples");
+    }
+  }
+});
+
+test("all-failed VCF imports preserve the quality exclusion notice without forwarding any genotype calls", async () => {
+  const content =
+    "##fileformat=VCFv4.5\n##reference=GRCh38\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tSAMPLE\n" +
+    "1\t100\trs123\tA\tG\t0\tLowQual\t.\tGT:FT:GQ\t1/1:FAIL:0\n";
+  for (const file of [
+    new File([content], "input.vcf"),
+    new File([gzipSync(content)], "input.vcf.gz"),
+    storedZip("input.vcf", content),
+  ]) {
+    const result = await parseFileBlobWithDetection(file, () => {});
+    expect(result.genotypes).toEqual([]);
+    expect(result.detectedFormat).toBe("vcf");
+    expect(result.warnings).toEqual([
+      "1 calls failed a VCF site (FILTER) or sample (FT) quality filter and were excluded from analysis.",
+    ]);
+  }
+});

@@ -233,6 +233,81 @@ test("merged dbSNP identifiers resolve into other sources and gene evidence rema
   expect(requests).toEqual([]);
 });
 
+for (const dbsnpFirst of [false, true]) {
+  test(`enabling dbSNP preserves routed evidence under original and canonical rsIDs (${dbsnpFirst ? "dbSNP first" : "GWAS first"})`, async () => {
+    const dbPages = [[annotation("db-new", "rs123", { source: "dbsnp", scope: "variant", aliases: ["rs99"] })]];
+    const dbsnp = await pack("dbsnp", dbPages, [["rs99", "rs123"]]);
+    const pages = [
+      [annotation("old-study", "rs99", { source: "gwas", scope: "variant", assembly: undefined })],
+      [annotation("new-study", "rs123", { source: "gwas", scope: "variant", assembly: undefined })],
+      [annotation("unrelated-study", "rs456", { source: "gwas", scope: "variant", assembly: undefined })],
+    ];
+    const gwas = await pack("gwas", pages);
+    addRouting(dbsnp, dbPages);
+    addRouting(gwas, pages);
+    serveCatalog(dbsnpFirst ? [dbsnp, gwas] : [gwas, dbsnp]);
+    const opened: string[][] = [];
+    const references = store(opened);
+    await references.initialize(catalogUrl);
+    await references.download(gwas.id, () => undefined);
+    const call = { ...user, rsid: "rs99" };
+    expect((await references.match([call], () => undefined)).evidence.get("rs99")?.map((row) => row.id)).toEqual([
+      "old-study",
+    ]);
+    await references.download(dbsnp.id, () => undefined);
+    opened.length = 0;
+    requests = [];
+    const result = await references.match([call], () => undefined);
+    const evidence = result.evidence.get("rs99")!;
+    expect(evidence.map((row) => row.id).sort()).toEqual(["db-new", "new-study", "old-study"]);
+    expect(evidence.every((row) => row.matchType === "locus")).toBe(true);
+    expect(evidence.find((row) => row.id === "old-study")?.rsid).toBe("rs99");
+    expect(result.summaries.get("rs99")).toMatchObject({ count: 3, ambiguous: false, unresolvedCount: 0 });
+    expect((await references.match([call], () => undefined, true)).summaries).toEqual(result.summaries);
+    expect((await references.lookup("rs99")).map((row) => row.id).sort()).toEqual(["db-new", "new-study", "old-study"]);
+    expect(opened.some((ids) => ids.includes("old-study"))).toBe(true);
+    expect(opened.some((ids) => ids.includes("unrelated-study"))).toBe(false);
+    expect(requests).toEqual([]);
+  });
+}
+
+test("historical evidence shares canonical conflict checks and is never duplicated by overlapping lookups", async () => {
+  const dbPages = [[annotation("db-new", "rs123", { source: "dbsnp", scope: "variant", aliases: ["rs99"] })]];
+  const dbsnp = await pack("dbsnp", dbPages, [["rs99", "rs123"]]);
+  const pages = [[annotation("old-classification", "rs99")], [annotation("new-classification", "rs123")]];
+  const clinvar = await pack("clinvar", pages);
+  addRouting(dbsnp, dbPages);
+  addRouting(clinvar, pages);
+  serveCatalog([clinvar, dbsnp]);
+  const references = store();
+  await references.initialize(catalogUrl);
+  for (const source of [clinvar, dbsnp]) await references.download(source.id, () => undefined);
+  const aliasCall = { ...user, rsid: "rs99" };
+  for (const canonicalCall of [user, { ...user, genotype: "AA" }]) {
+    for (const calls of [
+      [aliasCall, canonicalCall],
+      [canonicalCall, aliasCall],
+    ]) {
+      const result = await references.match(calls, () => undefined);
+      const conflicting = canonicalCall.genotype !== aliasCall.genotype;
+      for (const id of ["rs99", "rs123"]) {
+        expect(
+          result.evidence
+            .get(id)
+            ?.map((row) => row.id)
+            .sort(),
+        ).toEqual(["db-new", "new-classification", "old-classification"]);
+        expect(result.summaries.get(id)).toMatchObject({
+          count: 3,
+          ambiguous: conflicting,
+          alleleCount: conflicting ? 0 : 2,
+          unresolvedCount: conflicting ? 3 : 0,
+        });
+      }
+    }
+  }
+});
+
 test("large result summaries omit annotation bodies and expand coverage beyond SNPedia", async () => {
   const source = await pack("clinvar", [
     [annotation("one", "rs123"), annotation("two", "rs123", { title: "Another condition" })],

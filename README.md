@@ -51,7 +51,9 @@ The [browser workspace guide](docs/browser-workspace.md) explains the six eviden
 - **Modern React**: Built with React 19 and the React Compiler for optimal performance
 - **Extensible Architecture**: Easy to add support for new DNA file formats
 
-VCF sequence calls preserve explicit allele boundaries. Indel evidence requires the same build, position, REF and called ALT representation; the app does not guess equivalent representations by left-aligning or converting genome builds. Calls on noncanonical contigs remain available in Imported calls. Reference blocks, symbolic alleles, and missing genotypes are reported in import notes when skipped.
+VCF imports require exactly one sample; export the person you want to analyze from a multi-sample file before importing it. Calls explicitly marked as failing the site's `FILTER` or the sample's `FT` checks are skipped and counted in import notes. `PASS` or missing filter information does not establish clinical accuracy, and the app does not invent numeric quality thresholds.
+
+VCF sequence calls preserve explicit allele boundaries. Indel evidence requires the same build, position, REF and called ALT representation; the app does not guess equivalent representations by left-aligning or converting genome builds. Calls on noncanonical contigs remain available in Imported calls. Reference blocks, symbolic alleles, and missing genotypes are reported in import notes when skipped. Contradictory calls remain inspectable, but their genotype-specific interpretations are withheld even when no additional reference packs are enabled.
 
 Promethease imports only explicit personal calls from the report's embedded data. Historical annotations and genosets remain source report text. Annotation coordinates are not substituted for the original call's coordinates. PDFs preserve extractable text and page numbers; scanned pages need local OCR, and images or charts are not transcribed. These imports and the PDF parser run entirely on the device with locally served application assets.
 

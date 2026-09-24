@@ -2,6 +2,7 @@ import type { Database } from "sql.js";
 import type { UserGenotype, MatchedSNP, ParsedSNPData } from "../types/snp";
 import { extractSnpediaFields, type SnpediaSourceFields } from "../utils/snpediaFields";
 import { userCallIdentity } from "../utils/matchIdentity";
+import { ambiguousCallIds } from "../utils/callAmbiguity";
 
 type OptionalSnpColumn = "gene" | "gene_s" | "clin_gene_name" | "clin_sig" | "clin_disease";
 
@@ -117,6 +118,9 @@ export async function matchSNPsInBatches(
   onProgress: (current: number, total: number) => void,
 ): Promise<MatchedSNP[]> {
   const matches: MatchedSNP[] = [];
+  // Check the entire upload before batching so distant conflicting rows cannot
+  // receive genotype-specific evidence merely because references are absent.
+  const ambiguous = ambiguousCallIds(genotypes);
   // Retain references to emitted matches instead of serializing large source
   // articles into deduplication keys. Different evidence is never collapsed.
   const emitted = new Map<string, MatchedSNP[]>();
@@ -132,7 +136,11 @@ export async function matchSNPsInBatches(
     const contextUsers = new Set(
       batch.filter(
         (user) =>
-          user.strand === "unknown" || user.alleles || (user.ref?.length ?? 0) > 1 || /[/|]/.test(user.genotype),
+          ambiguous.has(user.rsid.toLowerCase()) ||
+          user.strand === "unknown" ||
+          user.alleles ||
+          (user.ref?.length ?? 0) > 1 ||
+          /[/|]/.test(user.genotype),
       ),
     );
     for (const genotype of batch) {
@@ -296,6 +304,7 @@ export async function matchSNPsInBatches(
               continue;
             const match: MatchedSNP = {
               ...user,
+              ...(ambiguous.has(user.rsid.toLowerCase()) ? { ambiguous: true } : {}),
               snpData: {
                 rsid,
                 content,

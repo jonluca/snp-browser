@@ -25,6 +25,17 @@ interface ResultsDisplayProps {
 
 const parsedValue = (value: unknown) => (value === null || value === undefined ? "" : String(value));
 const rsidCollator = new Intl.Collator(undefined, { numeric: true });
+const isAmbiguous = (match: MatchedSNP) => Boolean(match.ambiguous || match.annotationSummary?.ambiguous);
+const hasAlleleAnnotation = (match: MatchedSNP) =>
+  !isAmbiguous(match) && Boolean(match.genotypeData || match.annotationSummary?.alleleCount);
+const matchApplicability = (match: MatchedSNP) =>
+  isAmbiguous(match)
+    ? "Conflicting uploaded calls"
+    : hasAlleleAnnotation(match)
+      ? "Allele or genotype annotation"
+      : "General variant information";
+const CONFLICT_REASON =
+  "This upload contains conflicting calls or coordinates for this variant. Genotype-specific interpretation has been withheld. Check the original calls before interpreting this variant.";
 
 function presentMatch(match: MatchedSNP) {
   const fallback = getVariantPresentation(match.snpData);
@@ -37,6 +48,8 @@ function presentMatch(match: MatchedSNP) {
 
 const SNP_EXPORT_COLUMNS: CsvColumn<MatchedSNP>[] = [
   { header: "RSID", value: (match) => match.rsid },
+  { header: "Match Applicability", value: matchApplicability },
+  { header: "Conflict Reason", value: (match) => (isAmbiguous(match) ? CONFLICT_REASON : undefined) },
   { header: "Gene Symbol", value: (match) => match.parsedData.geneSymbol },
   { header: "User Genotype", value: (match) => match.genotype },
   { header: "Called Alleles", value: (match) => (match.alleles ? JSON.stringify(match.alleles) : undefined) },
@@ -46,8 +59,8 @@ const SNP_EXPORT_COLUMNS: CsvColumn<MatchedSNP>[] = [
   { header: "Phased", value: (match) => match.phased },
   { header: "Chromosome", value: (match) => match.chromosome },
   { header: "Position", value: (match) => match.position },
-  { header: "SNPedia Genotype", value: (match) => match.genotypeData?.genotype },
-  { header: "Genotype ID", value: (match) => match.genotypeData?.id },
+  { header: "SNPedia Genotype", value: (match) => (isAmbiguous(match) ? undefined : match.genotypeData?.genotype) },
+  { header: "Genotype ID", value: (match) => (isAmbiguous(match) ? undefined : match.genotypeData?.id) },
   { header: "Magnitude", value: (match) => match.parsedData.magnitude },
   { header: "Repute", value: (match) => parsedValue(match.parsedData.repute) },
   { header: "Summary", value: (match) => parsedValue(match.parsedData.summary) },
@@ -67,8 +80,6 @@ const SNP_EXPORT_COLUMNS: CsvColumn<MatchedSNP>[] = [
   { header: "Confirmed Allele Matches", value: (match) => match.annotationSummary?.alleleCount },
   { header: "Unresolved Matches", value: (match) => match.annotationSummary?.unresolvedCount },
 ];
-
-const hasAlleleAnnotation = (match: MatchedSNP) => Boolean(match.genotypeData || match.annotationSummary?.alleleCount);
 
 export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision }: ResultsDisplayProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("snps");
@@ -108,16 +119,17 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
   }, [matchRows, searchTerm, onlyWithGenotype, sortMode]);
 
   const selectedSNP = filteredRows.find((row) => row.key === selectedId)?.match;
+  const selectedAmbiguous = Boolean(selectedSNP && isAmbiguous(selectedSNP));
   const selectedPresentation = selectedSNP ? presentMatch(selectedSNP) : undefined;
   const annotationDetails = useQuery({
     queryKey: [
       "matched-annotations",
       selectedSNP ? userCallIdentity(selectedSNP) : null,
       referenceRevision,
-      selectedSNP?.annotationSummary?.ambiguous,
+      selectedAmbiguous,
     ],
     enabled: Boolean(selectedSNP?.annotationSummary?.count),
-    queryFn: () => workerApi.getMatchedAnnotations(selectedSNP!, selectedSNP?.annotationSummary?.ambiguous),
+    queryFn: () => workerApi.getMatchedAnnotations(selectedSNP!, selectedAmbiguous),
     retry: false,
   });
 
@@ -179,7 +191,9 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
               Magnitude <span className="text-slate-800">{match.parsedData.magnitude}</span>
             </span>
           )}
-          <span>{hasAlleleAnnotation(match) ? "Allele or genotype annotation" : "General variant information"}</span>
+          <span className={isAmbiguous(match) ? "font-semibold text-amber-800" : undefined}>
+            {matchApplicability(match)}
+          </span>
           {match.annotationSummary && (
             <span>{match.annotationSummary.sources.map((source) => ANNOTATION_SOURCE_NAMES[source]).join(" · ")}</span>
           )}
@@ -386,6 +400,15 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
                       </a>
                     )}
                   </div>
+                  {selectedAmbiguous && (
+                    <section
+                      aria-label="Conflicting uploaded calls"
+                      className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-950"
+                    >
+                      <h4 className="text-sm font-semibold">Conflicting uploaded calls</h4>
+                      <p className="mt-2 text-sm leading-6">{CONFLICT_REASON}</p>
+                    </section>
+                  )}
                   <p className="mt-5 text-lg leading-relaxed text-slate-800">
                     {selectedPresentation.preview ||
                       "No summary is available for this variant. Explore the research notes below."}
@@ -397,7 +420,9 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
                     )}
                   >
                     <div className="bg-brand-50 p-3.5">
-                      <dt className="text-[11px] font-medium text-brand-700">Your genotype</dt>
+                      <dt className="text-[11px] font-medium text-brand-700">
+                        {selectedAmbiguous ? "Uploaded genotype" : "Your genotype"}
+                      </dt>
                       <dd className="mt-1 break-all font-mono text-lg font-semibold text-brand-700">
                         {selectedSNP.genotype.toUpperCase()}
                       </dd>
@@ -438,7 +463,7 @@ export function ResultsDisplay({ matches, genosets, workerApi, referenceRevision
                       <p className="mt-2 break-all font-mono">{selectedSNP.rsid}</p>
                     </details>
                   )}
-                  {selectedSNP.genotypeData?.content ? (
+                  {!selectedAmbiguous && selectedSNP.genotypeData?.content ? (
                     <section className="border-t border-slate-200 pt-5">
                       <h4 className="mb-4 text-sm font-semibold text-slate-900">About your genotype</h4>
                       <p className="mb-4 text-xs text-slate-500">SNPedia record: {selectedSNP.genotypeData.id}</p>
