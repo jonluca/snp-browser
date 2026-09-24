@@ -1,4 +1,5 @@
 import type { ParseResult } from "../types/snp";
+import type { ImportProgress } from "../types/progress";
 import { parserRegistry, parserVCF } from "../parsers";
 
 const ZIP_LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
@@ -14,6 +15,22 @@ interface ZipEntry {
   localHeaderOffset: number;
 }
 
+function parsingProgress(
+  unit: ImportProgress["unit"],
+  onProgress: (current: number, total: number) => void,
+  onStatus?: (progress: ImportProgress) => void,
+): (current: number, total: number) => void {
+  onStatus?.({ stage: "parsing", unit });
+  return (current, total) => {
+    // PDF.js has not opened the document when the PDF parser reports (0, 1).
+    // Keep that legacy callback intact, but do not present 1 as a known page count.
+    onStatus?.(
+      unit === "pages" && current === 0 ? { stage: "parsing", unit } : { stage: "parsing", current, total, unit },
+    );
+    onProgress(current, total);
+  };
+}
+
 /**
  * Parse file using appropriate parser based on format detection or specified parser ID
  */
@@ -21,8 +38,10 @@ export async function parseFileWithDetection(
   fileContent: string,
   onProgress: (current: number, total: number) => void,
   parserId?: string,
+  onStatus?: (progress: ImportProgress) => void,
 ): Promise<ParseResult & { detectedFormat?: string }> {
   let parser;
+  onStatus?.({ stage: "detecting" });
 
   // If parser ID is specified, use that parser
   if (parserId) {
@@ -65,13 +84,18 @@ export async function parseFileWithDetection(
   }
 
   // Parse using detected or specified parser
-  const result = await parser.parse(fileContent, onProgress);
+  const unit = parser.metadata.id === "promethease" ? "characters" : "lines";
+  const result = await parser.parse(fileContent, parsingProgress(unit, onProgress, onStatus));
   // Omitted metadata is unknown for an imported file. The low-level matcher
   // still accepts older callers without metadata, so make this explicit here
   // before any app import can reach genotype-specific interpretation.
   for (const call of result.genotypes) {
     if (call.strand === undefined) call.strand = "unknown";
   }
+  // Some raw parsers skip their final callback when the last line is blank.
+  // Only fill in that terminal count after parsing and normalization finish.
+  const total = unit === "characters" ? fileContent.length : result.totalLines;
+  onStatus?.({ stage: "parsing", current: total, total, unit });
 
   return {
     ...result,
@@ -202,8 +226,14 @@ async function archiveDetectionContent(file: File): Promise<string> {
   return file.slice(0, 256 * 1024).text();
 }
 
-async function extractSupportedFileFromZip(file: File, parserId?: string): Promise<File> {
+async function extractSupportedFileFromZip(
+  file: File,
+  parserId?: string,
+  onStatus?: (progress: ImportProgress) => void,
+): Promise<File> {
+  onStatus?.({ stage: "reading" });
   const buffer = await file.arrayBuffer();
+  onStatus?.({ stage: "extracting" });
   const entries = readZipEntries(buffer).filter(
     (candidate) =>
       isSupportedArchiveEntry(candidate.filename) &&
@@ -213,8 +243,10 @@ async function extractSupportedFileFromZip(file: File, parserId?: string): Promi
   const selectedParser = parserId ? parserRegistry.get(parserId) : undefined;
   const fallback: File[] = [];
   for (const entry of entries) {
+    onStatus?.({ stage: "extracting" });
     const entryBytes = await readZipEntry(buffer, entry);
     const candidate = new File([bytesToArrayBuffer(entryBytes)], entry.filename);
+    onStatus?.({ stage: "detecting" });
     const content = await archiveDetectionContent(candidate);
     const isPdf = content.startsWith("%PDF-");
     const isVcf =
@@ -255,31 +287,43 @@ export async function parseFileBlobWithDetection(
   file: File,
   onProgress: (current: number, total: number) => void,
   parserId?: string,
+  onStatus?: (progress: ImportProgress) => void,
 ): Promise<ParseResult & { detectedFormat?: string }> {
   if (isZipFilename(file.name)) {
-    return parseFileBlobWithDetection(await extractSupportedFileFromZip(file, parserId), onProgress, parserId);
+    return parseFileBlobWithDetection(
+      await extractSupportedFileFromZip(file, parserId, onStatus),
+      onProgress,
+      parserId,
+      onStatus,
+    );
   }
 
+  onStatus?.({ stage: "reading" });
   if (
     parserId === "pdf" ||
     (!parserId && (file.name.toLowerCase().endsWith(".pdf") || (await file.slice(0, 5).text()) === "%PDF-"))
   ) {
     const { parsePdfReport } = await import("../parsers/pdf");
-    return { ...(await parsePdfReport(file, onProgress)), detectedFormat: "pdf" };
+    return {
+      ...(await parsePdfReport(file, parsingProgress("pages", onProgress, onStatus))),
+      detectedFormat: "pdf",
+    };
   }
 
+  onStatus?.({ stage: "detecting" });
   const genericGzipVcf =
     !parserId &&
     !isVcfLikeFilename(file.name) &&
     file.name.toLowerCase().endsWith(".gz") &&
     /^##fileformat=VCFv[34]\./i.test(await parserVCF.readDetectionPrefix(file));
   if (parserId === parserVCF.metadata.id || (!parserId && (isVcfLikeFilename(file.name) || genericGzipVcf))) {
-    const result = await parserVCF.parseBlob(file, onProgress);
+    const result = await parserVCF.parseBlob(file, parsingProgress("bytes", onProgress, onStatus));
     return {
       ...result,
       detectedFormat: parserVCF.metadata.id,
     };
   }
 
-  return parseFileWithDetection(await file.text(), onProgress, parserId);
+  onStatus?.({ stage: "reading" });
+  return parseFileWithDetection(await file.text(), onProgress, parserId, onStatus);
 }

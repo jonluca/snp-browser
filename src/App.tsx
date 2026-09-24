@@ -13,31 +13,11 @@ import { LocalWorkspaceStatus } from "./components/LocalWorkspaceStatus";
 import { useReferenceLibrary } from "./hooks/useReferenceLibrary";
 import type { ParseResult, MatchedSNP, MatchedGenoset } from "./types/snp";
 import { DB_URL } from "./constants.ts";
+import { useAnalysisProgress } from "./hooks/useAnalysisProgress";
+import { ProcessingProgress } from "./components/ProcessingProgress";
+import type { ImportProgress } from "./types/progress";
 
 type AppMode = "upload" | "browse" | "references";
-
-function isVcfLikeFile(file: File): boolean {
-  const lowerFilename = file.name.toLowerCase();
-  return (
-    lowerFilename.endsWith(".vcf") ||
-    lowerFilename.endsWith(".gvcf") ||
-    lowerFilename.endsWith(".g.vcf") ||
-    lowerFilename.endsWith(".vcf.gz") ||
-    lowerFilename.endsWith(".g.vcf.gz") ||
-    (lowerFilename.endsWith(".gz") && lowerFilename.includes("vcf"))
-  );
-}
-
-function isZipFile(file: File): boolean {
-  return file.name.toLowerCase().endsWith(".zip");
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
-}
 
 function App() {
   const queryClient = useQueryClient();
@@ -60,10 +40,14 @@ function App() {
   const [matchError, setMatchError] = useState<Error | null>(null);
   const [analyzedReferenceRevision, setAnalyzedReferenceRevision] = useState(0);
 
-  // Refs for direct DOM manipulation of progress bar (shared across all operations)
-  const progressBarRef = useRef<HTMLDivElement>(null);
-  const progressTextRef = useRef<HTMLParagraphElement>(null);
-  const progressPhaseRef = useRef<"database" | "parse" | "snps" | "genosets" | null>("database");
+  const {
+    snapshot: analysisProgress,
+    start: startProgress,
+    update: updateProgress,
+    finish: finishProgress,
+  } = useAnalysisProgress();
+  // Background database updates only belong to an analysis while it is waiting for the reference.
+  const progressPhaseRef = useRef<"database" | "parse" | "snps" | "genosets" | null>(null);
   const dbLoadProgressRef = useRef(0);
   const dbLoadPromiseRef = useRef<Promise<void> | null>(null);
 
@@ -95,12 +79,7 @@ function App() {
               setDbLoadProgress(roundedProgress);
             }
             if (progressPhaseRef.current !== "database") return;
-            if (progressBarRef.current) {
-              progressBarRef.current.style.width = `${progress}%`;
-            }
-            if (progressTextRef.current) {
-              progressTextRef.current.textContent = `${Math.round(progress)}% complete`;
-            }
+            updateProgress({ stage: "database", current: roundedProgress, total: 100, unit: "percent" });
           }),
         );
 
@@ -128,7 +107,7 @@ function App() {
     return () => {
       isCurrent = false;
     };
-  }, [isWorkerReady, workerApi]);
+  }, [isWorkerReady, workerApi, updateProgress]);
 
   const handleFileSelect = useCallback(
     async (file: File) => {
@@ -144,20 +123,15 @@ function App() {
         // Parse file in worker thread with progress reporting
         progressPhaseRef.current = "parse";
         setIsParsing(true);
+        startProgress({ stage: "reading" });
         setMatchError(null);
 
-        const showByteProgress = isVcfLikeFile(file) && !isZipFile(file);
         const result = await parserWorkerApi.parseFileBlob(
           file,
-          proxy((current: number, total: number) => {
-            if (progressPhaseRef.current !== "parse") return;
-            const progress = total > 0 ? (current / total) * 100 : 0;
-            if (progressBarRef.current) progressBarRef.current.style.width = `${progress}%`;
-            if (progressTextRef.current) {
-              progressTextRef.current.textContent = showByteProgress
-                ? `${formatBytes(current)} / ${formatBytes(total)} read`
-                : `${current.toLocaleString()} / ${total.toLocaleString()} processed`;
-            }
+          undefined,
+          undefined,
+          proxy((progress: ImportProgress) => {
+            if (progressPhaseRef.current === "parse") updateProgress(progress);
           }),
         );
 
@@ -171,6 +145,7 @@ function App() {
           setGenosets([]);
           progressPhaseRef.current = null;
           processingRef.current = false;
+          finishProgress();
           return;
         }
         setResultView("suggestions");
@@ -186,6 +161,7 @@ function App() {
           );
           progressPhaseRef.current = null;
           processingRef.current = false;
+          finishProgress();
           return;
         }
 
@@ -193,23 +169,24 @@ function App() {
         setIsMatching(true);
 
         progressPhaseRef.current = "database";
+        updateProgress({ stage: "database", current: dbLoadProgressRef.current, total: 100, unit: "percent" });
         if (dbLoadPromiseRef.current) {
           // Trait analysis and independently cached references remain usable when SNPedia is unavailable.
           await dbLoadPromiseRef.current.catch(() => undefined);
         }
 
         progressPhaseRef.current = "snps";
+        updateProgress({ stage: "matches" });
         const matchedSNPs = await workerApi.matchSNPs(
           result.genotypes,
           proxy((current: number, total: number) => {
             if (progressPhaseRef.current !== "snps") return;
-            const progress = total > 0 ? (current / total) * 100 : 0;
-            if (progressBarRef.current) {
-              progressBarRef.current.style.width = `${progress}%`;
-            }
-            if (progressTextRef.current) {
-              progressTextRef.current.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} variants processed`;
-            }
+            updateProgress({
+              stage: "matches",
+              current: total > 0 ? (current / total) * 100 : undefined,
+              total: total > 0 ? 100 : undefined,
+              unit: "percent",
+            });
           }),
         );
 
@@ -220,17 +197,12 @@ function App() {
         setIsMatchingGenosets(true);
 
         progressPhaseRef.current = "genosets";
+        updateProgress({ stage: "genosets" });
         const matchedGenosets = await workerApi.matchGenosets(
           matchedSNPs,
           proxy((current: number, total: number) => {
             if (progressPhaseRef.current !== "genosets") return;
-            const progress = total > 0 ? (current / total) * 100 : 0;
-            if (progressBarRef.current) {
-              progressBarRef.current.style.width = `${progress}%`;
-            }
-            if (progressTextRef.current) {
-              progressTextRef.current.textContent = `${current.toLocaleString()} / ${total.toLocaleString()} genosets checked`;
-            }
+            updateProgress({ stage: "genosets", current, total, unit: "genosets" });
           }),
         );
 
@@ -246,9 +218,11 @@ function App() {
         setIsMatching(false);
         setIsMatchingGenosets(false);
       }
+      finishProgress();
+      progressPhaseRef.current = null;
       processingRef.current = false;
     },
-    [parserWorkerApi, workerApi, references.revision, queryClient],
+    [parserWorkerApi, workerApi, references.revision, queryClient, startProgress, updateProgress, finishProgress],
   );
 
   const refreshAnalysis = async () => {
@@ -257,21 +231,31 @@ function App() {
     setIsMatching(true);
     setMatchError(null);
     progressPhaseRef.current = "snps";
+    startProgress({ stage: "matches" });
     try {
       const updated = await workerApi.matchSNPs(
         parseResult.genotypes,
         proxy((current: number, total: number) => {
-          const percent = total ? (current / total) * 100 : 0;
-          if (progressBarRef.current) progressBarRef.current.style.width = `${percent}%`;
-          if (progressTextRef.current) progressTextRef.current.textContent = `${Math.round(percent)}% complete`;
+          if (progressPhaseRef.current !== "snps") return;
+          updateProgress({
+            stage: "matches",
+            current: total > 0 ? (current / total) * 100 : undefined,
+            total: total > 0 ? 100 : undefined,
+            unit: "percent",
+          });
         }),
       );
       setMatches(updated);
       setIsMatching(false);
       setIsMatchingGenosets(true);
+      progressPhaseRef.current = "genosets";
+      updateProgress({ stage: "genosets" });
       const related = await workerApi.matchGenosets(
         updated,
-        proxy(() => undefined),
+        proxy((current: number, total: number) => {
+          if (progressPhaseRef.current === "genosets")
+            updateProgress({ stage: "genosets", current, total, unit: "genosets" });
+        }),
       );
       setGenosets(related);
       setAnalyzedReferenceRevision(references.revision);
@@ -282,9 +266,11 @@ function App() {
     setIsMatching(false);
     setIsMatchingGenosets(false);
     processingRef.current = false;
+    finishProgress();
   };
 
   const handleReset = useCallback(() => {
+    finishProgress();
     queryClient.removeQueries({ queryKey: ["matched-annotations"] });
     setFileName(null);
     setParseResult(null);
@@ -294,7 +280,7 @@ function App() {
     setGenosets(null);
     setMatchError(null);
     setMode("upload");
-  }, [queryClient]);
+  }, [queryClient, finishProgress]);
 
   // Determine app state
   const hasResults = Boolean(parseResult && (parseResult.genotypes.length || parseResult.report));
@@ -304,7 +290,6 @@ function App() {
   const hasError = Boolean(error);
   const isDatabaseReady = Boolean(dbStats) && !isDbLoading && !dbError;
   const isProcessing = isParsing || isMatching || isMatchingGenosets;
-  const isWaitingForDatabase = isMatching && isDbLoading && !dbError;
   const canUpload =
     Boolean(parserWorkerApi) &&
     Boolean(workerApi) &&
@@ -320,20 +305,6 @@ function App() {
     : isDbLoading && !dbError
       ? `Preparing database - ${dbLoadProgress}%`
       : "Database unavailable";
-
-  const processingStage = isParsing ? 0 : isMatching ? 1 : 2;
-  const processingTitle = isParsing
-    ? "Reading your DNA file"
-    : isMatching
-      ? isWaitingForDatabase
-        ? "Preparing the reference database"
-        : "Finding your reference matches"
-      : "Checking related genosets";
-  const processingDetail = isParsing
-    ? "Detecting the format and reading your data locally."
-    : isMatching
-      ? `${parseResult?.genotypes.length.toLocaleString() ?? "0"} variants read. ${isWaitingForDatabase ? "Matching will start automatically." : "Comparing your genotypes with reference annotations."}`
-      : `Looking for combinations across ${matches?.length.toLocaleString() ?? "0"} matching records.`;
 
   return (
     <div className="min-h-screen">
@@ -439,14 +410,11 @@ function App() {
               </p>
               <div className="mx-auto mb-4 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-slate-100">
                 <div
-                  ref={progressBarRef}
                   className="h-full rounded-full bg-brand-500 transition-[width] duration-300"
                   style={{ width: `${dbLoadProgress}%` }}
                 />
               </div>
-              <p ref={progressTextRef} className="text-sm tabular-nums text-slate-500">
-                {dbLoadProgress}% complete
-              </p>
+              <p className="text-sm tabular-nums text-slate-500">{dbLoadProgress}% complete</p>
             </section>
           ) : null)}
 
@@ -527,63 +495,12 @@ function App() {
           </section>
         )}
 
-        {isProcessing && (
-          <section
-            key={processingStage}
-            className={
-              parseResult?.traits && !isParsing
-                ? "surface-panel mb-6 px-5 py-5 text-center"
-                : "surface-panel mx-auto my-8 max-w-3xl px-6 py-12 text-center sm:px-12 sm:py-16"
-            }
-            aria-busy="true"
-          >
-            <div
-              className={parseResult?.traits && !isParsing ? "hidden" : "mb-8 flex justify-center gap-3"}
-              aria-label={`Analysis step ${processingStage + 1} of 3`}
-            >
-              {["Read file", "Match variants", "Find genosets"].map((label, index) => (
-                <span
-                  key={label}
-                  className={twMerge(
-                    "flex items-center gap-2 text-xs",
-                    index <= processingStage ? "text-brand-700" : "text-slate-400",
-                  )}
-                >
-                  <span
-                    className={twMerge(
-                      "flex size-6 items-center justify-center rounded-full text-[11px] font-semibold",
-                      index <= processingStage ? "bg-brand-100" : "bg-slate-100",
-                    )}
-                  >
-                    {index < processingStage ? "✓" : index + 1}
-                  </span>
-                  <span className="hidden sm:inline">{label}</span>
-                </span>
-              ))}
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-950">{processingTitle}</h1>
-            {fileName && (
-              <p className="mt-2 truncate text-sm font-medium text-slate-700" title={fileName}>
-                {fileName}
-              </p>
-            )}
-            <p className="mx-auto mb-8 mt-3 max-w-lg text-sm leading-6 text-slate-500">{processingDetail}</p>
-            <div className="mx-auto mb-4 h-1.5 w-full max-w-md overflow-hidden rounded-full bg-slate-100">
-              <div
-                ref={progressBarRef}
-                className="h-full rounded-full bg-brand-500 transition-[width] duration-200"
-                style={{ width: isWaitingForDatabase ? `${dbLoadProgress}%` : "0%" }}
-              />
-            </div>
-            <p ref={progressTextRef} className="text-xs tabular-nums text-slate-500">
-              {isWaitingForDatabase ? `${dbLoadProgress}% complete` : "Starting…"}
-            </p>
-            <p className="mt-4 text-xs text-slate-400">
-              {parseResult?.traits && !isParsing
-                ? "Your trait suggestions are ready below. Reference matching continues on this device."
-                : "Keep this tab open while your file is processed locally."}
-            </p>
-          </section>
+        {isProcessing && analysisProgress && (
+          <ProcessingProgress
+            snapshot={analysisProgress}
+            fileName={fileName}
+            summariesReady={Boolean(parseResult?.traits && !isParsing)}
+          />
         )}
 
         {mode === "upload" && isProcessing && !isParsing && parseResult?.traits && (

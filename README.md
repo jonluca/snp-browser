@@ -48,6 +48,7 @@ The [browser workspace guide](docs/browser-workspace.md) explains the six eviden
 - **Conservative matching**: Exact allele evidence requires compatible assembly, position, strand, and bases. Unknown or conflicting identity remains unresolved; gene–drug context does not imply a personal drug recommendation
 - **Virtualized Rendering**: Efficiently display large datasets with react-virtuoso
 - **Web Worker Processing**: Offload heavy computations using Comlink for a smooth UI experience
+- **Large-file progress**: Stage labels, measured file-reading and matching progress, elapsed time, and a notice when progress reports pause. ZIP extraction and result preparation stay visible even when a percentage is unavailable.
 - **Modern React**: Built with React 19 and the React Compiler for optimal performance
 - **Extensible Architecture**: Easy to add support for new DNA file formats
 

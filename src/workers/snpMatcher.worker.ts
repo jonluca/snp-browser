@@ -15,6 +15,7 @@ import type { ReferenceLocation } from "./referenceQueries";
 import { analyzeTraits } from "../utils/traitAnalysis";
 import { analyzeHaplogroups } from "../utils/haplogroupAnalysis";
 import { buildSnpediaGeneHints } from "./snpediaGeneHints";
+import type { ImportProgress } from "../types/progress";
 
 let sqlModulePromise: Promise<SqlJsStatic> | null = null;
 function getSqlModule(): Promise<SqlJsStatic> {
@@ -23,6 +24,26 @@ function getSqlModule(): Promise<SqlJsStatic> {
 }
 const referenceStore = new ReferenceStore(async (bytes) => new (await getSqlModule()).Database(bytes));
 let referenceInitialization: Promise<unknown> | undefined;
+
+function importProgressReporter(onStatus?: (progress: ImportProgress) => void) {
+  let previous: ImportProgress | undefined;
+  let lastUpdate = 0;
+  return (progress: ImportProgress) => {
+    if (!onStatus) return;
+    const now = performance.now();
+    const changedStage = previous?.stage !== progress.stage || previous?.unit !== progress.unit;
+    const changedCount = previous?.current !== progress.current || previous?.total !== progress.total;
+    // gzip can report all compressed bytes read while decompression continues.
+    // Send that count once, without flooding Comlink or treating it as completion.
+    if (!changedStage && !changedCount) return;
+    const reachedTotal = progress.total !== undefined && progress.current === progress.total;
+    if (changedStage || previous?.total !== progress.total || reachedTotal || now - lastUpdate >= 100) {
+      onStatus(progress);
+      previous = progress;
+      lastUpdate = now;
+    }
+  };
+}
 
 /**
  * Worker state - holds the loaded database
@@ -227,12 +248,16 @@ const workerApi = {
    */
   async parseFile(
     fileContent: string,
-    onProgress: (current: number, total: number) => void,
+    onProgress: (current: number, total: number) => void = () => undefined,
     parserId?: string,
+    onStatus?: (progress: ImportProgress) => void,
   ): Promise<ParseResult & { detectedFormat?: string }> {
-    const result = await parseFileWithDetection(fileContent, onProgress, parserId);
+    const report = importProgressReporter(onStatus);
+    const result = await parseFileWithDetection(fileContent, onProgress, parserId, report);
+    report({ stage: "summarizing" });
     result.traits = analyzeTraits(result.genotypes);
     result.haplogroups = analyzeHaplogroups(result.genotypes);
+    report({ stage: "preparing" });
     return result;
   },
 
@@ -242,12 +267,16 @@ const workerApi = {
    */
   async parseFileBlob(
     file: File,
-    onProgress: (current: number, total: number) => void,
+    onProgress: (current: number, total: number) => void = () => undefined,
     parserId?: string,
+    onStatus?: (progress: ImportProgress) => void,
   ): Promise<ParseResult & { detectedFormat?: string }> {
-    const result = await parseFileBlobWithDetection(file, onProgress, parserId);
+    const report = importProgressReporter(onStatus);
+    const result = await parseFileBlobWithDetection(file, onProgress, parserId, report);
+    report({ stage: "summarizing" });
     result.traits = analyzeTraits(result.genotypes);
     result.haplogroups = analyzeHaplogroups(result.genotypes);
+    report({ stage: "preparing" });
     return result;
   },
 
