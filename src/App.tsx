@@ -588,6 +588,7 @@ function App() {
         {mode === "upload" && isProcessing && !isParsing && parseResult?.traits && (
           <DNASuggestions
             analysis={parseResult.traits}
+            haplogroups={parseResult.haplogroups}
             packs={references.packs}
             matching
             onReferences={() => setMode("references")}
@@ -684,6 +685,7 @@ function App() {
             {resultView === "suggestions" && parseResult?.traits && (
               <DNASuggestions
                 analysis={parseResult.traits}
+                haplogroups={parseResult.haplogroups}
                 packs={references.packs}
                 onReferences={() => setMode("references")}
                 onMatches={() => setResultView("matches")}

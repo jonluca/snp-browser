@@ -45,6 +45,8 @@ export interface UserGenotype {
   alleles?: string[];
   /** Only set when the uploaded file explicitly identifies a supported build. */
   assembly?: GenomeAssembly;
+  /** UCSC hg19 chrM and RSRS are not the rCRS mitochondrial sequence used by the panel. */
+  mitochondrialReference?: "rCRS" | "unsupported";
   /** Reference allele, in the same orientation as genotype. */
   ref?: string;
   /** Comma-separated called non-reference alleles; absent for a reference-only call. */
@@ -98,6 +100,7 @@ export interface ImportedReport {
 }
 
 export interface ParseResult {
+  haplogroups?: import("./haplogroups").HaplogroupAnalysis;
   traits?: import("./traits").TraitAnalysis;
   report?: ImportedReport;
   warnings?: string[];

@@ -5,12 +5,16 @@ import { normalizeAssembly } from "../utils/variantIdentity";
 export interface FileMetadata {
   assembly?: GenomeAssembly;
   strand?: UserGenotype["strand"];
+  mitochondrialReference?: UserGenotype["mitochondrialReference"];
 }
 
 /** Reads explicit declarations only; a provider name never supplies a default. */
 export function detectFileMetadata(content: string, vcf = false): FileMetadata {
   const assemblies = new Set<GenomeAssembly | "unsupported">();
   const strands = new Set<"plus" | "minus">();
+  let hasHg19 = false;
+  let hasRcrs = false;
+  let hasOtherMitochondrialReference = false;
   let offset = 0;
   while (offset < content.length) {
     const newline = content.indexOf("\n", offset);
@@ -28,6 +32,10 @@ export function detectFileMetadata(content: string, vcf = false): FileMetadata {
         declaration = /(?:^|[,<])assembly=([^,>]+)/i.exec(line)?.[1] ?? "";
       } else continue;
     }
+    hasHg19 ||= /\bhg19\b/i.test(declaration);
+    // Inspect the complete trusted declaration to retain mitochondrial contig accessions.
+    hasRcrs ||= /\b(?:rCRS|NC_012920(?:\.1)?)\b/i.test(line);
+    hasOtherMitochondrialReference ||= /\b(?:RSRS|NC_001807(?:\.4)?)\b/i.test(line);
     const assemblyNames = declaration.matchAll(
       /(?<![a-z0-9])(?:GRCh\s*\d+(?:\.p\d+)?|hg\d+|(?:NCBI\s*)?build\s*[:=]?\s*\d+|NCBI\s*\d+|b3[78])(?=$|[^a-z0-9])/gi,
     );
@@ -52,16 +60,22 @@ export function detectFileMetadata(content: string, vcf = false): FileMetadata {
   return {
     ...(assembly && assembly !== "unsupported" ? { assembly } : {}),
     ...(strands.size === 1 ? { strand: [...strands][0] } : {}),
+    ...(hasOtherMitochondrialReference || (assembly === "GRCh37" && hasHg19 && !hasRcrs)
+      ? { mitochondrialReference: "unsupported" as const }
+      : hasRcrs
+        ? { mitochondrialReference: "rCRS" as const }
+        : {}),
   };
 }
 
 /** Applies metadata to freshly parsed records without copying a whole genome. */
 export function applyFileMetadata(result: ParseResult, metadata: FileMetadata): ParseResult {
-  if (!metadata.assembly && !metadata.strand) return result;
+  if (!metadata.assembly && !metadata.strand && !metadata.mitochondrialReference) return result;
   if (metadata.assembly) result.assembly = metadata.assembly;
   for (const genotype of result.genotypes) {
     if (metadata.assembly) genotype.assembly = metadata.assembly;
     if (metadata.strand) genotype.strand = metadata.strand;
+    if (metadata.mitochondrialReference) genotype.mitochondrialReference = metadata.mitochondrialReference;
   }
   return result;
 }

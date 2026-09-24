@@ -1,7 +1,9 @@
 import { useState } from "react";
 import type { TraitAnalysis, TraitResult } from "../types/traits";
 import type { ReferencePackState } from "../types/annotations";
+import type { HaplogroupAnalysis } from "../types/haplogroups";
 import { buildCsv, downloadCsvFile } from "../utils/csvExport";
+import { HaplogroupSummary } from "./HaplogroupSummary";
 
 const STATUS_LABELS = {
   matched: "Marker-based guess",
@@ -84,12 +86,14 @@ function TraitCard({ result }: { result: TraitResult }) {
 
 export function DNASuggestions({
   analysis,
+  haplogroups,
   packs,
   onReferences,
   onMatches,
   matching = false,
 }: {
   analysis: TraitAnalysis;
+  haplogroups?: HaplogroupAnalysis;
   packs: ReferencePackState[];
   onReferences: () => void;
   onMatches: () => void;
@@ -117,6 +121,7 @@ export function DNASuggestions({
     );
   return (
     <section aria-label="What your DNA suggests" className="min-w-0">
+      {haplogroups && <HaplogroupSummary analysis={haplogroups} />}
       <div className="mb-6 grid gap-6 lg:grid-cols-[1fr_auto] lg:items-end">
         <div>
           <p className="section-label">A few things your DNA may tell you</p>

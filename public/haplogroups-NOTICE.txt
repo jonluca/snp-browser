@@ -1,0 +1,72 @@
+Haplogroup panel 2026-09-23: data attribution and license notices
+
+Y-DNA marker data
+=================
+
+Van Geystelen A, Decorte R, Larmuseau MHD. AMY-tree: an algorithm to use whole
+genome SNP calling for Y chromosomal phylogenetic applications. BMC Genomics
+14, 101 (2013).
+https://doi.org/10.1186/1471-2164-14-101
+
+Selected derived alleles, GRCh37 positions and branch relationships were curated
+from Supplementary Tables S1-S3:
+https://media.springernature.com/original/springer-static/esm/art%3A10.1186%2F1471-2164-14-101/MediaObjects/12864_2012_4771_MOESM1_ESM.xlsx
+
+This publication is licensed under Creative Commons Attribution 2.0:
+https://creativecommons.org/licenses/by/2.0/
+
+Changes: selection of factual marker records, addition of assembly/reference
+information and stable SNP-based display names. This application does not copy
+AMY-tree's implementation or scoring algorithm.
+
+All selected Y-SNP placements and reference alleles were checked against NCBI
+dbSNP build 157 on September 23, 2026, using NC_000024.9 (GRCh37) and
+NC_000024.10 (GRCh38). M122's rsID (rs78149062) was resolved from its GRCh37
+locus and verified in dbSNP; it is not present in the historical workbook.
+https://www.ncbi.nlm.nih.gov/snp/
+https://api.ncbi.nlm.nih.gov/variation/v0/refsnp/{rsid}
+
+Mitochondrial marker data
+========================
+
+Selected multi-site motifs and rCRS reference bases were curated from the
+Institute of Genetic Epidemiology's HaploGrep distribution of PhyloTree Build 17
+(February 18, 2016):
+https://github.com/genepi/phylotree-rcrs-17/tree/4fc8e791790bc9a19ee3f68f7c1444a17822d23f/src
+
+The RSRS-rooted topology was used to check biological ancestry:
+https://github.com/genepi/phylotree-rsrs-17/tree/0e79ddf1b78f7a1b81fb5d607bc31a6ddea7b18b/src
+
+van Oven M. PhyloTree Build 17: Growing the human mitochondrial DNA tree (2015).
+https://doi.org/10.1016/j.fsigss.2015.09.155
+
+Schonherr S, Weissensteiner H, Kronenberg F, Forer L. Haplogrep 3 - an interactive
+haplogroup classification and analysis platform (2023).
+https://doi.org/10.1093/nar/gkad284
+
+This application uses a limited, original marker-matching implementation, not
+the HaploGrep algorithm. It does not import population frequencies, geography
+labels or clinical annotations. The selected motifs are distributed under the
+source repository's MIT license:
+
+MIT License
+
+Copyright (c) 2022 Institute of Genetic Epidemiology
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

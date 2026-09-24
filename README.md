@@ -39,6 +39,7 @@ The [browser workspace guide](docs/browser-workspace.md) explains the six eviden
   - Promethease HTML reports with embedded personal genotype data
   - PDF reports, displayed as searchable source text without inferring raw genotype calls
   - ZIP archives containing a supported data file or report
+- **Haplogroups**: Simple Y-DNA and mitochondrial haplogroup estimates in **About you**, with a separate CSV export. A bundled, limited marker panel runs locally without reference downloads. Sparse or conflicting data remains inconclusive; these are broad lineage estimates, not a full haplogroup-tree classification. See [panel coverage, sources, and limitations](docs/haplogroups.md).
 - **Imported calls**: Browse all retained calls, including variants without annotations, and filter insertions, deletions, and multi-base calls
 - **Source reports**: Search and page through locally extracted PDF or Promethease text. Imported HTML scripts never run
 - **Automatic Format Detection**: Smart detection system identifies file format with confidence scoring

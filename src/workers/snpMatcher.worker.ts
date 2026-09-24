@@ -13,6 +13,7 @@ import { mergeReferenceMatches } from "./referenceMatching";
 import type { ReferenceDownloadProgress } from "../types/annotations";
 import type { ReferenceLocation } from "./referenceQueries";
 import { analyzeTraits } from "../utils/traitAnalysis";
+import { analyzeHaplogroups } from "../utils/haplogroupAnalysis";
 import { buildSnpediaGeneHints } from "./snpediaGeneHints";
 
 let sqlModulePromise: Promise<SqlJsStatic> | null = null;
@@ -231,6 +232,7 @@ const workerApi = {
   ): Promise<ParseResult & { detectedFormat?: string }> {
     const result = await parseFileWithDetection(fileContent, onProgress, parserId);
     result.traits = analyzeTraits(result.genotypes);
+    result.haplogroups = analyzeHaplogroups(result.genotypes);
     return result;
   },
 
@@ -245,6 +247,7 @@ const workerApi = {
   ): Promise<ParseResult & { detectedFormat?: string }> {
     const result = await parseFileBlobWithDetection(file, onProgress, parserId);
     result.traits = analyzeTraits(result.genotypes);
+    result.haplogroups = analyzeHaplogroups(result.genotypes);
     return result;
   },
 

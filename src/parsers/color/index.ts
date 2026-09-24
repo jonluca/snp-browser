@@ -91,6 +91,11 @@ export class ParserColor implements DNAParser {
       // An explicit row value is not replaced with an incompatible header
       // default, including when the row names an unsupported reference build.
       const assembly = fileMetadata.assembly && rowAssembly !== fileMetadata.assembly ? undefined : rowAssembly;
+      // UCSC hg19 uses a different mitochondrial reference from GRCh37/rCRS.
+      // Preserve this distinction before normalizing the row's build name.
+      const mitochondrialReference =
+        fileMetadata.mitochondrialReference ??
+        (declaredVersion && /^hg[\s:_-]*19$/i.test(declaredVersion) ? "unsupported" : undefined);
 
       genotypes.push({
         rsid: rsid.toLowerCase(),
@@ -98,6 +103,7 @@ export class ParserColor implements DNAParser {
         position,
         genotype: genotype.toLowerCase(),
         ...(assembly ? { assembly } : {}),
+        ...(mitochondrialReference ? { mitochondrialReference } : {}),
       });
 
       if (i % batchSize === 0 || i === lines.length - 1) {
@@ -112,7 +118,7 @@ export class ParserColor implements DNAParser {
         skippedLines,
         errors,
       },
-      { strand: fileMetadata.strand },
+      { strand: fileMetadata.strand, mitochondrialReference: fileMetadata.mitochondrialReference },
     );
     const assemblies = new Set<UserGenotype["assembly"]>();
     for (const genotype of genotypes) assemblies.add(genotype.assembly);
