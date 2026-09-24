@@ -73,6 +73,12 @@ export function lookupReferenceGenes(database: Database, genes: string[]): Varia
 }
 
 function wholeGeneCondition(placeholders: string): string {
+  // Defensively enforce that this is a run of "?" parameter placeholders
+  // (e.g. "?,?,?"), since the string below is interpolated into SQL text
+  // rather than bound as a parameter.
+  if (!/^\?(,\?)*$/.test(placeholders)) {
+    throw new Error("Invalid placeholders for wholeGeneCondition.");
+  }
   // Keep complete symbols: delimiters separate APOE from TOMM40, while the
   // hyphen in HLA-B and internal whitespace in a non-symbol remain intact.
   return `EXISTS (
