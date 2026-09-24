@@ -1,5 +1,7 @@
-const REMOTE_DB_URL = "https://static.snpbrowser.com/snpedia.db";
-const LOCAL_DB_PROXY_URL = "/snpedia.db";
+// Each verified release gets a new URL so cached older databases cannot mask updates.
+const SNPEDIA_DB_PATH = "/snpedia/2026-09-24.db";
+const REMOTE_DB_URL = `https://static.snpbrowser.com${SNPEDIA_DB_PATH}`;
+const LOCAL_DB_PROXY_URL = SNPEDIA_DB_PATH;
 
 const isLocalHost = ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 

@@ -6,7 +6,7 @@ import { referenceAssets } from "./tools/viteReferenceAssets";
 import { offlineApp } from "./tools/offlineApp";
 
 const dbProxy = {
-  "/snpedia.db": {
+  "/snpedia/": {
     target: "https://static.snpbrowser.com",
     changeOrigin: true,
   },

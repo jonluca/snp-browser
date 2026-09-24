@@ -16,6 +16,8 @@ The original data is originally based on a scrape from [https://github.com/jayko
 
 The SNP database is hosted at https://static.snpbrowser.com/snpedia.db
 
+The September 24, 2026 refresh verifies 111,726 SNP pages, 104,806 genotypes, and 283 genosets against SNPedia. It recovers 948 older chip-ID pages omitted from the previous scrape; existing records were unchanged. See the [refresh results and provenance](docs/snpedia-refresh-2026-09-24.md) and [repeatable refresh procedure](tools/snpedia/README.md).
+
 Additional references are available from **Data sources**: ClinVar, dbSNP, gnomAD, GWAS Catalog, Ensembl VEP, ClinPGx/PharmGKB, CPIC, ClinGen, Orphanet, UniProt, Open Targets, and HPO. Each download shows its actual coverage, release, size, and attribution. Some packs cover selected public variants or chromosomes; an absent annotation does not mean a variant is absent from the original source.
 
 Reference packs are versioned, checksum-verified SQLite shards stored compressed in the browser Cache API. Downloads are explicit and contain whole public packs; searches and matching never send a person's variants to an annotation service. After downloading, queries expand one local shard at a time. Compression preserves every annotation and source field. Browser storage limits and eviction can require a fresh download.
